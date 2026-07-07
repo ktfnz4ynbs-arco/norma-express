@@ -25,6 +25,7 @@ UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " \
      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 TIMEOUT = 20
 DDG = "https://html.duckduckgo.com/html/"
+STARTPAGE = "https://www.startpage.com/sp/search"
 BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 BRAVE_KEY = os.environ.get("BRAVE_API_KEY", "").strip()
 
@@ -150,13 +151,61 @@ def _ddg(query: str, n: int) -> list:
     return _rank(hits, n)
 
 
+# --------------------------------------------------------- Startpage (keyless)
+def _startpage(query: str, n: int) -> list:
+    """Risultati Google via Startpage: nessuna API key, nessuna registrazione."""
+    try:
+        r = requests.get(
+            STARTPAGE, params={"query": query, "cat": "web"},
+            headers={"User-Agent": UA, "Accept-Language": "it-IT,it;q=0.9",
+                     "Accept": "text/html,application/xhtml+xml"},
+            timeout=TIMEOUT,
+        )
+        r.raise_for_status()
+    except requests.RequestException:
+        return []
+
+    clean = re.sub(r"(?is)<(style|script)[^>]*>.*?</\1>", " ", r.text)
+    snips = [_strip(s) for s in re.findall(
+        r'<p class="description[^"]*"[^>]*>(.*?)</p>', clean, re.S)]
+
+    hits, seen = [], set()
+    for i, m in enumerate(re.finditer(
+            r'<a\b([^>]*\bclass="[^"]*result-title[^"]*"[^>]*)>(.*?)</a>', clean, re.S)):
+        hm = re.search(r'href="([^"]+)"', m.group(1))
+        url = hm.group(1) if hm else ""
+        title = _strip(m.group(2))
+        dom = _domain(url)
+        if not url.startswith("http") or not dom or dom in seen or not title:
+            continue
+        if any(x in dom for x in BLOCK):
+            continue
+        seen.add(dom)
+        hits.append(Hit(title=title, url=url, snippet=snips[i] if i < len(snips) else "",
+                        source=dom, trusted=dom in TRUSTED))
+    return _rank(hits, n)
+
+
 # --------------------------------------------------------------------- public
+def _engines():
+    """Provider in ordine di preferenza. Brave solo se c'e' la key (opzionale)."""
+    chain = []
+    if BRAVE_KEY:
+        chain.append(_brave)
+    chain += [_startpage, _ddg]
+    return chain
+
+
 def web_search(query: str, n: int = 6) -> list:
-    """Esegue la ricerca usando il miglior provider disponibile."""
-    hits = _brave(query, n) if BRAVE_KEY else []
-    if not hits:
-        hits = _ddg(query, n)
-    return [asdict(h) for h in hits]
+    """Prova i provider keyless in sequenza finche' uno restituisce risultati."""
+    for engine in _engines():
+        try:
+            hits = engine(query, n)
+        except Exception:
+            hits = []
+        if hits:
+            return [asdict(h) for h in hits]
+    return []
 
 
 def interpretazione(label: str, extra: str = "") -> list:
@@ -187,4 +236,4 @@ def deep_links(ref_label: str) -> list:
 
 
 def provider_status() -> str:
-    return "brave" if BRAVE_KEY else "duckduckgo"
+    return "brave" if BRAVE_KEY else "startpage+duckduckgo"

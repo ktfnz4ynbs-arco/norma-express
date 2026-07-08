@@ -119,11 +119,11 @@ def summarize_page(url: str, query: str) -> str:
     return out if _readable(out) else ""
 
 
-def batch_summaries(urls: list, query: str, max_workers: int = 5) -> dict:
+def batch_summaries(urls: list, query: str, max_workers: int = 6) -> dict:
     """Riassunti in parallelo per una lista di URL. {url: summary}"""
     out = {}
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futs = {ex.submit(summarize_page, u, query): u for u in urls[:8]}
+        futs = {ex.submit(summarize_page, u, query): u for u in urls[:12]}
         for f in as_completed(futs):
             u = futs[f]
             try:
@@ -174,7 +174,7 @@ def brocardi_extract(url: str) -> dict:
 
 def enrich(query: str, interp_urls: list, giuri_urls: list) -> dict:
     """Endpoint core: riassunti per tutti gli URL + estrazione speciale Brocardi."""
-    all_urls = list(dict.fromkeys((interp_urls or []) + (giuri_urls or [])))[:8]
+    all_urls = list(dict.fromkeys((interp_urls or []) + (giuri_urls or [])))[:12]
 
     brocardi_url = next((u for u in all_urls if _is_brocardi_article(u)), None)
     result = {"summaries": {}, "brocardi": {}}

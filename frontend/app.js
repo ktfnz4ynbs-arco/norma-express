@@ -110,17 +110,17 @@ async function runSearch(payload) {
 }
 
 function setListLoading(sel, msg) {
-  $(sel).innerHTML = `<li class="empty-note loading-note"><span class="spinner" aria-hidden="true"></span>${esc(msg)}</li>`;
+  $(sel).innerHTML = `<p class="empty-note loading-note"><span class="spinner" aria-hidden="true"></span>${esc(msg)}</p>`;
 }
 
 function setBusy(b) {
   document.querySelectorAll(".go").forEach((x) => (x.disabled = b));
 }
 
-/* Riassunti estrattivi: frasi reali dalle fonti, caricate in modo progressivo.
-   Sostituiscono lo snippet provvisorio; la fonte resta un click esplicito. */
+/* Riassunti estrattivi di TUTTE le fonti, caricati in modo progressivo:
+   riempiono la finestra "Sintesi dalle fonti" di ciascun pannello. */
 async function loadSummaries(data) {
-  const take = (hits) => (hits || []).slice(0, 3).map((h) => h.url);
+  const take = (hits) => (hits || []).map((h) => h.url);
   const interp_urls = take(data.interpretazioni);
   const giuri_urls = take(data.giurisprudenza);
   if (!interp_urls.length && !giuri_urls.length) return;
@@ -133,33 +133,33 @@ async function loadSummaries(data) {
     });
     const enr = await res.json();
 
-    // sostituisci lo snippet provvisorio con il riassunto estratto dalla fonte;
-    // il link "Apri la fonte diretta" resta dentro il riassunto.
-    document.querySelectorAll(".hit-sum.provisional").forEach((p) => {
-      const li = p.closest(".hit");
-      const url = li && li.dataset.url;
+    // sostituisci gli snippet provvisori con i riassunti estratti dalle fonti
+    document.querySelectorAll(".digest-text.provisional").forEach((p) => {
+      const item = p.closest(".digest-item");
+      const url = item && item.dataset.url;
       const sum = enr.summaries && enr.summaries[url];
-      const txt = p.querySelector(".sum-text");
       if (sum) {
         p.classList.remove("provisional");
-        if (txt) txt.textContent = sum + " ";
-      } else if (txt && txt.textContent.trim() === "Riassunto in preparazione…") {
-        // nessun riassunto leggibile e nessuno snippet: via il risultato
-        li.remove();
+        p.textContent = sum;
+      } else if (p.textContent.trim() === "Riassunto in preparazione…") {
+        // nessun riassunto leggibile e nessuno snippet: via dalla sintesi
+        item.remove();
       }
     });
 
-    // massime Brocardi in testa alla giurisprudenza
+    // massime Brocardi in testa alla sintesi della giurisprudenza
     const bro = enr.brocardi || {};
     if (bro.massime && bro.massime.length) {
-      const ul = $("#giuri-list");
-      const blocks = bro.massime.map((m) => `
-        <li class="massima">
-          <span class="massima-ref">${esc(m.ref || "Massima")}</span>
-          <p>${esc(m.text)}</p>
-          <a class="sum-link" href="${esc(bro.massime_url)}" target="_blank" rel="noopener">Testo integrale e altre massime →</a>
-        </li>`).join("");
-      ul.insertAdjacentHTML("afterbegin", blocks);
+      const digest = document.querySelector("#giuri-list .digest .block-title");
+      if (digest) {
+        const blocks = bro.massime.map((m) => `
+          <div class="massima">
+            <span class="massima-ref">${esc(m.ref || "Massima")}</span>
+            <p>${esc(m.text)}</p>
+            <a class="sum-link" href="${esc(bro.massime_url)}" target="_blank" rel="noopener">Testo integrale e altre massime →</a>
+          </div>`).join("");
+        digest.insertAdjacentHTML("afterend", blocks);
+      }
     }
   } catch (err) {
     /* in caso di errore restano gli snippet provvisori: comunque leggibili */
@@ -209,26 +209,39 @@ function metaItem(label, val) {
 }
 
 function renderHits(sel, hits, emptyMsg) {
-  const ul = $(sel);
+  const box = $(sel);
   if (!hits || !hits.length) {
-    ul.innerHTML = `<li class="empty-note">${esc(emptyMsg)}</li>`;
+    box.innerHTML = `<p class="empty-note">${esc(emptyMsg)}</p>`;
     return;
   }
-  // Riassunto-first: il titolo NON è un link; il link alla fonte sta
-  // DENTRO il riassunto, come approfondimento a scelta dell'utente.
-  ul.innerHTML = hits.map((h) => {
+  // FINESTRA UNICA con i riassunti di tutte le fonti…
+  const digest = hits.map((h) => {
     const trusted = h.trusted ? " trusted" : "";
-    const verified = h.trusted ? '<span class="verified">fonte gratuita</span> · ' : "";
     const provisional = h.snippet || "Riassunto in preparazione…";
-    return `<li class="hit${trusted}" data-url="${esc(h.url)}">
-      <div class="hit-title">${esc(h.title)}</div>
-      <p class="hit-sum provisional">
-        <span class="sum-text">${esc(provisional)}</span>
-        <a class="sum-link" href="${esc(h.url)}" target="_blank" rel="noopener">Apri la fonte diretta →</a>
-      </p>
-      <span class="src"><span class="dot"></span>${verified}${esc(h.source)}</span>
+    return `<div class="digest-item${trusted}" data-url="${esc(h.url)}">
+      <span class="digest-src">${esc(h.source)}</span>
+      <p class="digest-text provisional">${esc(provisional)}</p>
+    </div>`;
+  }).join("");
+
+  // …POI l'elenco delle fonti consultabili (link espliciti)
+  const fonti = hits.map((h) => {
+    const verified = h.trusted ? ' <span class="verified">· fonte gratuita</span>' : "";
+    return `<li>
+      <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
+      <span class="fonte-dom">${esc(h.source)}${verified}</span>
     </li>`;
   }).join("");
+
+  box.innerHTML = `
+    <section class="digest">
+      <p class="block-title">Sintesi dalle fonti</p>
+      ${digest}
+    </section>
+    <section class="fonti">
+      <p class="block-title">Fonti consultabili</p>
+      <ul class="fonti-list">${fonti}</ul>
+    </section>`;
 }
 
 function renderBanche(links) {

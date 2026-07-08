@@ -59,8 +59,18 @@ Catena di provider:
 1. **Brave Search API** se è impostata `BRAVE_API_KEY` (free tier 2000/mese). **Consigliato in
    produzione**: gli IP datacenter (Railway) vengono bloccati dai motori scrapati.
 2. **DuckDuckGo HTML** (best-effort). Da IP datacenter torna spesso HTTP 202 "challenge" → 0 risultati.
-3. **Deep-link banche dati** (Cassazione/ItalgiureWeb, Google Scholar, Brocardi, Altalex) —
-   sempre presenti nella risposta, così l'utente non resta mai a mani vuote.
+3. **Deep-link banche dati GRATUITE** (Cassazione/ItalgiureWeb, Corte Costituzionale,
+   Google Scholar, Brocardi) — sempre presenti nella risposta.
+
+**VINCOLO UTENTE (2026-07-08): niente servizi a pagamento.** `search.py::BLOCK` esclude
+Giuffrè/DeJure, Altalex, Leggi d'Italia, Wolters Kluwer, Sole 24 Ore, Giappichelli, ecc.
+Non aggiungere fonti paywall nei risultati né nelle banche dati.
+
+**Flusso UI (vincolo utente): prima l'articolo, poi il resto.** Il frontend chiama in
+sequenza: `/api/articolo` (rapido, solo Normattiva → card articolo subito) →
+`/api/fonti` (ricerca web) → `/api/riassunti`. Nei risultati il RIASSUNTO è il contenuto
+principale (titolo non linkato); la fonte si apre solo col link esplicito
+"Apri la fonte diretta →" dentro il risultato. `/api/ricerca` resta per compatibilità.
 
 Se le liste web sono vuote il frontend mostra un empty-state + i deep-link. È il comportamento atteso.
 

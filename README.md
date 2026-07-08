@@ -30,8 +30,8 @@ norma-express/
 | Sezione | Fonte | Affidabilità |
 |---|---|---|
 | Articolo | Normattiva (`normattiva.it`) | Ufficiale |
-| Interpretazione / Giurisprudenza | Brave Search API **oppure** DuckDuckGo | Fonti terze, da verificare |
-| Banche dati (link) | Cassazione/ItalgiureWeb, Google Scholar, Brocardi, Altalex | Sempre disponibili |
+| Interpretazione / Giurisprudenza | Ricerca web (Startpage/DuckDuckGo, **solo fonti gratuite**) con riassunti estrattivi | Fonti terze, da verificare |
+| Banche dati (link) | Cassazione/ItalgiureWeb, Corte Costituzionale, Google Scholar, Brocardi | Gratuite, sempre disponibili |
 
 ---
 

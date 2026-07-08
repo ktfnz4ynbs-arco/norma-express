@@ -73,8 +73,13 @@ sequenza: `/api/articolo` (rapido, solo Normattiva → card articolo subito) →
 **Layout risultati (vincolo utente 2026-07-08):** 4 card in ordine —
 1. **Articolo** (Normattiva).
 2. **Sintesi "Interpretazione e giurisprudenza"**: UNA SOLA sintesi che fonde interpretazione
-   + giurisprudenza di tutte le fonti (`enrich.unified_summary` → `enrich()` ritorna
-   `{sintesi, brocardi{massime}}`); sotto, le **Massime della Cassazione** (Brocardi).
+   + giurisprudenza di tutte le fonti. **VERIFICABILE (vincolo utente 2026-07-08):**
+   `unified_summary` ritorna una LISTA di segmenti tracciabili `{text,url,source}`; il
+   frontend mostra accanto a ogni passaggio una **citazione cliccabile `[n]`** collegata alla
+   fonte (numero coerente con l'elenco "Fonti consultabili"). `enrich()` ritorna
+   `{sintesi:[segmenti], brocardi{massime}}`. La pagina Brocardi grezza e' esclusa dal pool
+   (rumore "Consulenze legali/Q-code"): la sua parte utile entra via `extra` (spiegazione).
+   Sotto, le **Massime della Cassazione** (Brocardi).
 3. **Fonti consultabili**: elenco combinato dei link (interp+giuri, deduplicati) + banche dati.
 4. **Approfondisci con una domanda**: box Q&A → `POST /api/domanda {query,domanda}`. Risposta
    **ESTRATTIVA** (nessuna generazione AI): cerca sul web `label+domanda`, estrae con

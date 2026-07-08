@@ -71,10 +71,13 @@ sequenza: `/api/articolo` (rapido, solo Normattiva → card articolo subito) →
 `/api/fonti` (ricerca web) → `/api/riassunti`. `/api/ricerca` resta per compatibilità.
 
 **Layout pannelli (vincolo utente 2026-07-08):** ogni pannello (Interpretazione /
-Giurisprudenza) ha DUE blocchi: prima la finestra unica **"Sintesi dalle fonti"**
-(riassunti estrattivi di TUTTE le fonti, etichettati per dominio; le massime Cassazione
-in testa alla sintesi giurisprudenza), poi l'elenco **"Fonti consultabili"** con i link
-espliciti. I riassunti coprono tutte le fonti (cap 12 URL, 6 worker).
+Giurisprudenza) ha DUE blocchi: prima la finestra **"Sintesi dalle fonti"** con UNA SOLA
+sintesi (merge estrattivo di tutte le fonti — `enrich.unified_summary`: raccoglie le frasi
+piu' pertinenti di ogni pagina, deduplica, ordina per pertinenza; la spiegazione Brocardi
+ha un boost), poi l'elenco **"Fonti consultabili"** con i link. Le massime Cassazione
+(Brocardi) vanno sotto la sintesi della giurisprudenza. `/api/riassunti` ritorna
+`interpretazione_sintesi`, `giurisprudenza_sintesi`, `brocardi{massime}`.
+`_clean()` rimuove i marcatori-nota `(1)`/`[2058]` tipici di Brocardi.
 
 **VINCOLO UTENTE (2026-07-08): mai contenuto illeggibile.** I PDF/documenti binari sono
 esclusi dai risultati (`search.py::_DOC_RE`) e comunque scartati in `enrich.py`

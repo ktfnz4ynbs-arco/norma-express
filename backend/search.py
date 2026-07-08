@@ -29,28 +29,35 @@ STARTPAGE = "https://www.startpage.com/sp/search"
 BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 BRAVE_KEY = os.environ.get("BRAVE_API_KEY", "").strip()
 
-# Fonti giuridiche note -> punteggio di affidabilita' (piu' alto = piu' su)
+# Fonti giuridiche note AD ACCESSO GRATUITO -> punteggio (piu' alto = piu' su)
 TRUSTED = {
     "cortedicassazione.it": 10,
     "italgiure.giustizia.it": 10,
     "giustizia-amministrativa.it": 9,
     "cortecostituzionale.it": 9,
     "brocardi.it": 8,
-    "altalex.com": 7,
-    "dejure.it": 7,
     "normattiva.it": 6,
+    "gazzettaufficiale.it": 6,
     "laleggepertutti.it": 6,
     "giurisprudenzapenale.com": 6,
     "giustiziainsieme.it": 6,
     "bosettiegatti.eu": 6,
     "diritto.it": 5,
     "ilprocessocivile.it": 5,
-    "quotidianogiuridico.it": 5,
     "salvisjuribus.it": 4,
+    "wikilabour.it": 4,
 }
 
+# Esclusi: rumore + SERVIZI A PAGAMENTO (paywall/abbonamento)
 BLOCK = ("youtube.com", "facebook.com", "amazon.", "wikipedia.org", "pinterest.",
-         "instagram.com", "tiktok.com", "studocu.com")
+         "instagram.com", "tiktok.com", "studocu.com",
+         # banche dati / editoria giuridica a pagamento
+         "dejure.it", "leggiditalia.it", "quotidianogiuridico.it", "altalex.com",
+         "onelegale.wolterskluwer.it", "wolterskluwer.it", "giuffre.it",
+         "giuffrefrancislefebvre.it", "giuffrefl.it", "plusplus24diritto",
+         "ilsole24ore.com", "24o.it", "giappichelli.it", "zanichelli.it",
+         "edotto.com", "dirittoegiustizia.it", "iusexplorer.it", "lexology.com",
+         "shop.")
 
 
 @dataclass
@@ -219,17 +226,17 @@ def giurisprudenza(label: str, extra: str = "") -> list:
 
 
 def deep_links(ref_label: str) -> list:
-    """Ricerche pronte verso le banche dati ufficiali (sempre disponibili)."""
+    """Ricerche pronte verso banche dati GRATUITE (sempre disponibili)."""
     q = quote_plus(ref_label)
     return [
         {"name": "Corte di Cassazione (ItalgiureWeb)",
          "url": "https://www.italgiure.giustizia.it/sncass/"},
+        {"name": "Corte Costituzionale",
+         "url": "https://www.cortecostituzionale.it/actionPronuncia.do"},
         {"name": "Giurisprudenza su Google Scholar",
          "url": f"https://scholar.google.com/scholar?q={q}"},
         {"name": "Brocardi — spiegazioni e massime",
          "url": f"https://www.brocardi.it/ricerca/?q={q}"},
-        {"name": "Altalex — dottrina e sentenze",
-         "url": f"https://www.altalex.com/ricerca?q={q}"},
         {"name": "Ricerca web generale",
          "url": f"https://duckduckgo.com/?q={q}+giurisprudenza"},
     ]

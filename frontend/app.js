@@ -60,23 +60,48 @@ function showStatus(html, isError) {
 
 async function runSearch(payload) {
   resultsEl.hidden = true;
-  showStatus('<span class="spinner" aria-hidden="true"></span>Ricerca in corso su Normattiva e sul web…');
+  showStatus('<span class="spinner" aria-hidden="true"></span>Recupero l’articolo da Normattiva…');
   setBusy(true);
   try {
-    const res = await fetch("/api/ricerca", {
+    // FASE 1 — prima di tutto: l'articolo preciso della norma
+    const resArt = await fetch("/api/articolo", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const data = await res.json();
-    if (!data.ok) {
-      showStatus(`<span class="error-box">${esc(data.error || "Errore nella ricerca.")}</span>`, true);
+    const art = await resArt.json();
+    if (!art.ok) {
+      showStatus(`<span class="error-box">${esc(art.error || "Errore nella ricerca.")}</span>`, true);
       return;
     }
-    render(data);
+    renderArticle(art.article);
+    setListLoading("#interp-list", "Cerco interpretazioni su fonti gratuite…");
+    setListLoading("#giuri-list", "Cerco giurisprudenza su fonti gratuite…");
+    $("#banche-links").innerHTML = "";
+    $("#disclaimer").textContent = "";
     statusEl.classList.add("hidden");
     resultsEl.hidden = false;
     resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    // FASE 2 — poi il resto: interpretazioni e giurisprudenza
+    const resFonti = await fetch("/api/fonti", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const fonti = await resFonti.json();
+    if (!fonti.ok) {
+      renderHits("#interp-list", [], "Ricerca fonti non riuscita. Usa le banche dati qui sotto.");
+      renderHits("#giuri-list", [], "Ricerca fonti non riuscita. Usa le banche dati qui sotto.");
+      return;
+    }
+    renderHits("#interp-list", fonti.interpretazioni, "Nessuna interpretazione trovata su fonti gratuite.");
+    renderHits("#giuri-list", fonti.giurisprudenza, "Nessuna pronuncia trovata. Usa le banche dati gratuite qui sotto.");
+    renderBanche(fonti.banche_dati);
+    $("#disclaimer").textContent = fonti.disclaimer || "";
+
+    // FASE 3 — riassunti estrattivi (approfondimento progressivo)
+    loadSummaries(fonti);
   } catch (err) {
     showStatus('<span class="error-box">Impossibile contattare il server. Riprova.</span>', true);
   } finally {
@@ -84,37 +109,21 @@ async function runSearch(payload) {
   }
 }
 
+function setListLoading(sel, msg) {
+  $(sel).innerHTML = `<li class="empty-note loading-note"><span class="spinner" aria-hidden="true"></span>${esc(msg)}</li>`;
+}
+
 function setBusy(b) {
   document.querySelectorAll(".go").forEach((x) => (x.disabled = b));
 }
 
-function render(data) {
-  renderArticle(data.article);
-  renderHits("#interp-list", data.interpretazioni, "Nessuna interpretazione trovata sul web per questa ricerca.");
-  renderHits("#giuri-list", data.giurisprudenza, "Nessuna pronuncia trovata sul web. Usa le banche dati ufficiali qui sotto.");
-  renderBanche(data.banche_dati);
-  $("#disclaimer").textContent = data.disclaimer || "";
-  loadSummaries(data);
-}
-
-/* Riassunti estrattivi: frasi reali dalle fonti, caricate in modo progressivo. */
+/* Riassunti estrattivi: frasi reali dalle fonti, caricate in modo progressivo.
+   Sostituiscono lo snippet provvisorio; la fonte resta un click esplicito. */
 async function loadSummaries(data) {
   const take = (hits) => (hits || []).slice(0, 3).map((h) => h.url);
   const interp_urls = take(data.interpretazioni);
   const giuri_urls = take(data.giurisprudenza);
   if (!interp_urls.length && !giuri_urls.length) return;
-
-  // placeholder di caricamento sotto i primi risultati
-  [...interp_urls, ...giuri_urls].forEach((u) => {
-    document.querySelectorAll(`.hit[data-url="${CSS.escape(u)}"]`).forEach((li) => {
-      if (!li.querySelector(".hit-sum")) {
-        const p = document.createElement("p");
-        p.className = "hit-sum loading";
-        p.textContent = "Estraggo il riassunto dalla fonte…";
-        li.appendChild(p);
-      }
-    });
-  });
 
   try {
     const res = await fetch("/api/riassunti", {
@@ -124,16 +133,14 @@ async function loadSummaries(data) {
     });
     const enr = await res.json();
 
-    // riempi i riassunti
-    document.querySelectorAll(".hit-sum.loading").forEach((p) => {
+    // sostituisci lo snippet provvisorio con il riassunto estratto dalla fonte
+    document.querySelectorAll(".hit-sum.provisional").forEach((p) => {
       const li = p.closest(".hit");
       const url = li && li.dataset.url;
       const sum = enr.summaries && enr.summaries[url];
       if (sum) {
-        p.classList.remove("loading");
-        p.innerHTML = `${esc(sum)} <a class="sum-link" href="${esc(url)}" target="_blank" rel="noopener">Approfondisci alla fonte →</a>`;
-      } else {
-        p.remove();
+        p.classList.remove("provisional");
+        p.textContent = sum;
       }
     });
 
@@ -150,7 +157,7 @@ async function loadSummaries(data) {
       ul.insertAdjacentHTML("afterbegin", blocks);
     }
   } catch (err) {
-    document.querySelectorAll(".hit-sum.loading").forEach((p) => p.remove());
+    /* in caso di errore restano gli snippet provvisori: comunque leggibili */
   }
 }
 
@@ -202,14 +209,18 @@ function renderHits(sel, hits, emptyMsg) {
     ul.innerHTML = `<li class="empty-note">${esc(emptyMsg)}</li>`;
     return;
   }
+  // Riassunto-first: il titolo NON è un link; la fonte si apre solo con
+  // il click esplicito su "Apri la fonte diretta" (approfondimento).
   ul.innerHTML = hits.map((h) => {
     const trusted = h.trusted ? " trusted" : "";
-    const verified = h.trusted ? '<span class="verified">fonte giuridica</span> · ' : "";
-    const snip = h.snippet ? `<p class="snippet">${esc(h.snippet)}</p>` : "";
+    const verified = h.trusted ? '<span class="verified">fonte gratuita</span> · ' : "";
+    const provisional = h.snippet || "Riassunto in preparazione…";
     return `<li class="hit${trusted}" data-url="${esc(h.url)}">
-      <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
-      ${snip}
-      <span class="src"><span class="dot"></span>${verified}${esc(h.source)}</span>
+      <div class="hit-title">${esc(h.title)}</div>
+      <p class="hit-sum provisional">${esc(provisional)}</p>
+      <span class="src"><span class="dot"></span>${verified}${esc(h.source)} ·
+        <a class="open-src" href="${esc(h.url)}" target="_blank" rel="noopener">Apri la fonte diretta →</a>
+      </span>
     </li>`;
   }).join("");
 }

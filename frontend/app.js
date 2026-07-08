@@ -2,6 +2,28 @@
 
 const $ = (s) => document.querySelector(s);
 
+// Mappa url -> {n, source} per numerare le fonti e collegare le citazioni.
+let sourceIndex = new Map();
+
+function buildIndex(hits) {
+  const map = new Map();
+  (hits || []).forEach((h, i) => {
+    if (!map.has(h.url)) map.set(h.url, { n: map.size + 1, source: h.source });
+  });
+  return map;
+}
+
+/* Rende una sintesi segmentata con citazioni cliccabili [n] verso la fonte.
+   Ogni passaggio è così verificabile aprendo la fonte da cui è estratto. */
+function renderSegments(segments, index) {
+  if (!segments || !segments.length) return "";
+  return segments.map((seg) => {
+    const info = index.get(seg.url);
+    const label = info ? `[${info.n}]` : (seg.source || "fonte");
+    return `${esc(seg.text)}<a class="cite" href="${esc(seg.url)}" target="_blank" rel="noopener" title="Verifica sulla fonte: ${esc(seg.source)}">${esc(label)}</a>`;
+  }).join(" ");
+}
+
 // --- Mode toggle ---
 const tabs = document.querySelectorAll(".mode-toggle button");
 const formFree = $("#form-free");
@@ -85,7 +107,8 @@ async function runSearch(payload) {
     renderArticle(art.article);
     currentLabel = art.label || "";
     $("#sintesi-body").innerHTML =
-      '<div class="digest"><div class="digest-unified provisional"><span class="spinner" aria-hidden="true"></span>Sto sintetizzando interpretazione e giurisprudenza…</div></div>';
+      '<div class="digest"><div class="digest-unified provisional"><span class="spinner" aria-hidden="true"></span>Sto sintetizzando interpretazione e giurisprudenza…</div>' +
+      '<p class="verify-cap" hidden>Ogni passaggio riporta la fonte <strong>[n]</strong>: clicca per verificarlo.</p></div>';
     $("#massime-body").innerHTML = "";
     $("#fonti-body").innerHTML = '<p class="empty-note loading-note"><span class="spinner" aria-hidden="true"></span>Cerco le fonti gratuite…</p>';
     $("#banche-links").innerHTML = "";
@@ -151,8 +174,11 @@ function fillSintesi(sintesi, hasSources, brocardi) {
   const box = document.querySelector("#sintesi-body .digest-unified");
   if (box) {
     box.classList.remove("provisional");
-    if (sintesi) {
-      box.textContent = sintesi;
+    const html = renderSegments(sintesi, sourceIndex);
+    if (html) {
+      box.innerHTML = html;
+      const cap = document.querySelector("#sintesi-body .verify-cap");
+      if (cap) cap.hidden = false;
     } else if (hasSources) {
       box.innerHTML = '<span class="digest-note">Sintesi automatica non disponibile per questa ricerca. Consulta le fonti qui sotto o fai una domanda.</span>';
     } else {
@@ -174,18 +200,23 @@ function fillSintesi(sintesi, hasSources, brocardi) {
 
 function renderFonti(hits) {
   const box = $("#fonti-body");
+  sourceIndex = buildIndex(hits);
   if (!hits || !hits.length) {
     box.innerHTML = '<p class="empty-note">Nessuna fonte gratuita trovata. Usa le banche dati ufficiali qui sotto.</p>';
     return;
   }
   const items = hits.map((h) => {
+    const n = sourceIndex.get(h.url)?.n;
     const verified = h.trusted ? ' <span class="verified">· fonte gratuita</span>' : "";
-    return `<li>
-      <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
-      <span class="fonte-dom">${esc(h.source)}${verified}</span>
+    return `<li id="fonte-${n}">
+      <span class="fonte-n">[${n}]</span>
+      <span class="fonte-main">
+        <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
+        <span class="fonte-dom">${esc(h.source)}${verified}</span>
+      </span>
     </li>`;
   }).join("");
-  box.innerHTML = `<ul class="fonti-list">${items}</ul>`;
+  box.innerHTML = `<ul class="fonti-list numbered">${items}</ul>`;
 }
 
 function renderArticle(a) {
@@ -246,16 +277,21 @@ async function askQuestion(domanda) {
       box.innerHTML = `<p class="empty-note">${esc(d.error || "Riprova.")}</p>`;
       return;
     }
-    const fonti = (d.fonti || []).map((h) =>
-      `<li><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
-        <span class="fonte-dom">${esc(h.source)}</span></li>`).join("");
-    const risposta = d.risposta
-      ? `<div class="digest"><p class="block-title">Risposta dalle fonti</p><div class="digest-unified">${esc(d.risposta)}</div></div>`
+    const idx = buildIndex(d.fonti);
+    const fonti = (d.fonti || []).map((h) => {
+      const n = idx.get(h.url)?.n;
+      return `<li id="dfonte-${n}"><span class="fonte-n">[${n}]</span>
+        <span class="fonte-main"><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
+        <span class="fonte-dom">${esc(h.source)}</span></span></li>`;
+    }).join("");
+    const html = renderSegments(d.risposta, idx);
+    const risposta = html
+      ? `<div class="digest"><p class="block-title">Risposta dalle fonti</p><div class="digest-unified">${html}</div></div>`
       : '<p class="empty-note">Non ho trovato un passaggio pertinente. Prova a riformulare o consulta le fonti qui sotto.</p>';
     box.innerHTML = `<div class="risposta">
       <p class="domanda-eco">« ${esc(domanda)} »</p>
       ${risposta}
-      ${fonti ? `<p class="block-title fonti-domanda-title">Fonti per approfondire</p><ul class="fonti-list">${fonti}</ul>` : ""}
+      ${fonti ? `<p class="block-title fonti-domanda-title">Fonti per approfondire</p><ul class="fonti-list numbered">${fonti}</ul>` : ""}
     </div>`;
   } catch (err) {
     box.innerHTML = '<p class="empty-note">Impossibile contattare il server. Riprova.</p>';

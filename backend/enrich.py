@@ -16,8 +16,16 @@ import html as _html
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
+
+
+def _domain(url: str) -> str:
+    try:
+        return urlparse(url).netloc.replace("www.", "").lower()
+    except Exception:
+        return ""
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " \
      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -64,6 +72,9 @@ def _clean(s: str) -> str:
     # rimuovi marcatori-nota e rimandi tipici (es. Brocardi): "(1)", "[ 2058 ]"
     s = re.sub(r"\(\s*\d+\s*\)", "", s)
     s = re.sub(r"\[\s*\d+[\d,\s]*\]", "", s)
+    # rumore Brocardi: rimandi a "Consulenza legale Qxxxxx" e codici quesito
+    s = re.sub(r"Consulenz[ae] legal[ei]\s*Q?\d+", "", s, flags=re.I)
+    s = re.sub(r"\bQ\d{6,}\b", "", s)
     s = re.sub(r"\s+([.,;:)])", r"\1", s)
     return re.sub(r"\s+", " ", s).strip()
 
@@ -140,7 +151,7 @@ def batch_summaries(urls: list, query: str, max_workers: int = 6) -> dict:
 
 # ----------------------------------------------------- SINTESI UNICA (merge)
 def _scored_sentences(url: str, query: str, per_source: int = 4) -> list:
-    """Le frasi piu' pertinenti di una singola pagina: [(frase, punteggio)]."""
+    """Le frasi piu' pertinenti di una singola pagina: [(frase, punteggio, url)]."""
     html = _get(url)
     if not html:
         return []
@@ -148,16 +159,17 @@ def _scored_sentences(url: str, query: str, per_source: int = 4) -> list:
     if not _readable(text):
         return []
     terms = _terms(query)
-    scored = [(s, _score(s, terms)) for s in _sentences(text) if _readable(s)]
+    scored = [(s, _score(s, terms), url) for s in _sentences(text) if _readable(s)]
     scored.sort(key=lambda x: x[1], reverse=True)
     return scored[:per_source]
 
 
 def unified_summary(urls: list, query: str, extra_sentences: Optional[list] = None,
-                    max_sentences: int = 6, max_chars: int = 950) -> str:
-    """UNA sola sintesi estrattiva che fonde le frasi piu' rilevanti di TUTTE
-    le fonti (frasi reali, deduplicate, ordinate per pertinenza)."""
-    pool = []
+                    max_sentences: int = 6, max_chars: int = 950) -> list:
+    """UNA sola sintesi estrattiva che fonde le frasi piu' rilevanti di TUTTE le
+    fonti. Ritorna una LISTA di segmenti tracciabili: [{text, url, source}],
+    cosi' ogni passaggio e' verificabile aprendo la fonte da cui proviene."""
+    pool = []  # (frase, punteggio, url)
     if urls:
         with ThreadPoolExecutor(max_workers=6) as ex:
             futs = [ex.submit(_scored_sentences, u, query) for u in urls[:10]]
@@ -166,23 +178,22 @@ def unified_summary(urls: list, query: str, extra_sentences: Optional[list] = No
                     pool.extend(f.result())
                 except Exception:
                     pass
-    if extra_sentences:  # es. la spiegazione di Brocardi: fonte forte -> boost
+    if extra_sentences:  # es. la spiegazione di Brocardi (lista di (frase, url)): boost
         terms = _terms(query)
-        pool.extend((s, _score(s, terms) + 2) for s in extra_sentences if _readable(s))
+        pool.extend((s, _score(s, terms) + 2, u) for s, u in extra_sentences
+                    if _readable(s))
 
-    seen, uniq = set(), []
-    for s, sc in sorted(pool, key=lambda x: x[1], reverse=True):
+    seen, segments, total = set(), [], 0
+    for s, sc, u in sorted(pool, key=lambda x: x[1], reverse=True):
         key = re.sub(r"[^a-z0-9]", "", s.lower())[:60]
-        if key and key not in seen:
-            seen.add(key)
-            uniq.append(s)
-        if len(uniq) >= max_sentences:
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        segments.append({"text": s, "url": u, "source": _domain(u)})
+        total += len(s)
+        if len(segments) >= max_sentences or total >= max_chars:
             break
-
-    out = " ".join(uniq).strip()
-    if len(out) > max_chars:
-        out = out[:max_chars].rsplit(" ", 1)[0] + "…"
-    return out
+    return segments
 
 
 # ----------------------------------------------------------------- Brocardi
@@ -233,9 +244,13 @@ def enrich(query: str, interp_urls: list, giuri_urls: list) -> dict:
 
     brocardi_url = next((u for u in all_urls if _is_brocardi_article(u)), None)
     bro = brocardi_extract(brocardi_url) if brocardi_url else {}
-    extra = _sentences(bro["spiegazione"]) if bro.get("spiegazione") else None
+    extra = ([(s, brocardi_url) for s in _sentences(bro["spiegazione"])]
+             if bro.get("spiegazione") else None)
 
-    sintesi = unified_summary(all_urls, query, extra,
+    # il testo grezzo della pagina Brocardi contiene sezioni rumorose
+    # ("Consulenze legali" ecc.): la sua parte utile entra gia' via `extra`.
+    summary_urls = [u for u in all_urls if u != brocardi_url]
+    sintesi = unified_summary(summary_urls, query, extra,
                               max_sentences=9, max_chars=1400)
 
     return {

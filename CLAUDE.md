@@ -68,9 +68,13 @@ Non aggiungere fonti paywall nei risultati né nelle banche dati.
 
 **Flusso UI (vincolo utente): prima l'articolo, poi il resto.** Il frontend chiama in
 sequenza: `/api/articolo` (rapido, solo Normattiva → card articolo subito) →
-`/api/fonti` (ricerca web) → `/api/riassunti`. Nei risultati il RIASSUNTO è il contenuto
-principale (titolo non linkato); il link "Apri la fonte diretta →" sta DENTRO il
-riassunto (vincolo utente). `/api/ricerca` resta per compatibilità.
+`/api/fonti` (ricerca web) → `/api/riassunti`. `/api/ricerca` resta per compatibilità.
+
+**Layout pannelli (vincolo utente 2026-07-08):** ogni pannello (Interpretazione /
+Giurisprudenza) ha DUE blocchi: prima la finestra unica **"Sintesi dalle fonti"**
+(riassunti estrattivi di TUTTE le fonti, etichettati per dominio; le massime Cassazione
+in testa alla sintesi giurisprudenza), poi l'elenco **"Fonti consultabili"** con i link
+espliciti. I riassunti coprono tutte le fonti (cap 12 URL, 6 worker).
 
 **VINCOLO UTENTE (2026-07-08): mai contenuto illeggibile.** I PDF/documenti binari sono
 esclusi dai risultati (`search.py::_DOC_RE`) e comunque scartati in `enrich.py`

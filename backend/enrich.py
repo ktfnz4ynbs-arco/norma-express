@@ -35,11 +35,26 @@ def _get(url: str) -> Optional[str]:
                                        "Accept-Language": "it-IT,it;q=0.9"},
                          timeout=TIMEOUT)
         r.raise_for_status()
+        # solo HTML: PDF/Office/binari produrrebbero testo illeggibile
+        ctype = (r.headers.get("Content-Type") or "").lower()
+        if ctype and "html" not in ctype and "text/plain" not in ctype:
+            return None
+        if r.content[:5] == b"%PDF-":
+            return None
         if r.encoding in (None, "ISO-8859-1"):
             r.encoding = r.apparent_encoding or "utf-8"
         return r.text
     except requests.RequestException:
         return None
+
+
+def _readable(text: str) -> bool:
+    """True se il testo sembra linguaggio naturale (non spazzatura binaria)."""
+    if not text or len(text) < 60:
+        return False
+    sample = text[:600]
+    word_chars = sum(1 for c in sample if c.isalpha() or c.isspace() or c in ".,;:'()-–«»0123456789")
+    return word_chars / len(sample) > 0.85
 
 
 def _clean(s: str) -> str:
@@ -84,21 +99,24 @@ def _main_text(html: str) -> str:
 
 
 def summarize_page(url: str, query: str) -> str:
-    """Riassunto estrattivo: frasi reali della pagina, le piu' pertinenti."""
+    """Riassunto estrattivo: frasi reali della pagina, le piu' pertinenti.
+    Ritorna "" se il contenuto non e' testo leggibile (PDF/binari)."""
     html = _get(url)
     if not html:
         return ""
     text = _main_text(html)
+    if not _readable(text):
+        return ""
     sents = _sentences(text)
     if not sents:
-        return text[:MAX_SUMMARY]
+        return text[:MAX_SUMMARY] if _readable(text[:MAX_SUMMARY]) else ""
     terms = _terms(query)
     ranked = sorted(enumerate(sents), key=lambda x: _score(x[1], terms), reverse=True)
     picked = sorted(i for i, _ in ranked[:3])
     out = " ".join(sents[i] for i in picked)
     if len(out) > MAX_SUMMARY:
         out = out[:MAX_SUMMARY].rsplit(" ", 1)[0] + "…"
-    return out
+    return out if _readable(out) else ""
 
 
 def batch_summaries(urls: list, query: str, max_workers: int = 5) -> dict:

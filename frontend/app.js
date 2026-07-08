@@ -133,14 +133,19 @@ async function loadSummaries(data) {
     });
     const enr = await res.json();
 
-    // sostituisci lo snippet provvisorio con il riassunto estratto dalla fonte
+    // sostituisci lo snippet provvisorio con il riassunto estratto dalla fonte;
+    // il link "Apri la fonte diretta" resta dentro il riassunto.
     document.querySelectorAll(".hit-sum.provisional").forEach((p) => {
       const li = p.closest(".hit");
       const url = li && li.dataset.url;
       const sum = enr.summaries && enr.summaries[url];
+      const txt = p.querySelector(".sum-text");
       if (sum) {
         p.classList.remove("provisional");
-        p.textContent = sum;
+        if (txt) txt.textContent = sum + " ";
+      } else if (txt && txt.textContent.trim() === "Riassunto in preparazione…") {
+        // nessun riassunto leggibile e nessuno snippet: via il risultato
+        li.remove();
       }
     });
 
@@ -209,18 +214,19 @@ function renderHits(sel, hits, emptyMsg) {
     ul.innerHTML = `<li class="empty-note">${esc(emptyMsg)}</li>`;
     return;
   }
-  // Riassunto-first: il titolo NON è un link; la fonte si apre solo con
-  // il click esplicito su "Apri la fonte diretta" (approfondimento).
+  // Riassunto-first: il titolo NON è un link; il link alla fonte sta
+  // DENTRO il riassunto, come approfondimento a scelta dell'utente.
   ul.innerHTML = hits.map((h) => {
     const trusted = h.trusted ? " trusted" : "";
     const verified = h.trusted ? '<span class="verified">fonte gratuita</span> · ' : "";
     const provisional = h.snippet || "Riassunto in preparazione…";
     return `<li class="hit${trusted}" data-url="${esc(h.url)}">
       <div class="hit-title">${esc(h.title)}</div>
-      <p class="hit-sum provisional">${esc(provisional)}</p>
-      <span class="src"><span class="dot"></span>${verified}${esc(h.source)} ·
-        <a class="open-src" href="${esc(h.url)}" target="_blank" rel="noopener">Apri la fonte diretta →</a>
-      </span>
+      <p class="hit-sum provisional">
+        <span class="sum-text">${esc(provisional)}</span>
+        <a class="sum-link" href="${esc(h.url)}" target="_blank" rel="noopener">Apri la fonte diretta →</a>
+      </p>
+      <span class="src"><span class="dot"></span>${verified}${esc(h.source)}</span>
     </li>`;
   }).join("");
 }

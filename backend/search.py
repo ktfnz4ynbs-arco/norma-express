@@ -81,7 +81,12 @@ def _strip(s: str) -> str:
     return _html.unescape(s).strip()
 
 
+_DOC_RE = re.compile(r"\.(pdf|docx?|pptx?|xlsx?|rtf|zip)(?:$|[?#])", re.I)
+
+
 def _rank(hits: list, n: int) -> list:
+    # niente documenti binari (PDF/Office): non riassumibili in modo leggibile
+    hits = [h for h in hits if not _DOC_RE.search(h.url)]
     hits.sort(key=lambda h: TRUSTED.get(h.source, 0), reverse=True)
     return hits[:n]
 

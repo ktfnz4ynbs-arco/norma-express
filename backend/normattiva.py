@@ -46,6 +46,8 @@ class ArticleResult:
     permalink: str = ""
     updates: list = field(default_factory=list)
     error: str = ""
+    abrogato: bool = False      # rilevamento automatico stato abrogazione
+    versions: int = 0           # numero versioni dell'articolo (multivigenza)
 
 
 def _session() -> requests.Session:
@@ -62,25 +64,32 @@ def _clean(node) -> str:
     return txt.strip()
 
 
-def _pick_article_link(html: str, articolo: Optional[str]) -> Optional[str]:
-    """Trova il link caricaArticolo dell'articolo richiesto, versione vigente."""
+def _pick_article_link(html: str, articolo: Optional[str]) -> tuple:
+    """Trova il link caricaArticolo dell'articolo richiesto (versione vigente)
+    e il numero di versioni esistenti (multivigenza)."""
     links = re.findall(r'caricaArticolo\?[^"\'<> ]+', html)
     if not links:
-        return None
+        return None, 0
     links = [unquote(l) for l in links]
 
     if articolo:
         target = re.sub(r"[^0-9]", "", articolo)  # "2-bis" -> "2"
         cands = [l for l in links if re.search(rf"art\.idArticolo={re.escape(target)}(?:&|$)", l)]
         if not cands:
-            return None
+            return None, 0
     else:
         cands = links
+
+    versions = 0
+    for l in cands:
+        m = re.search(r"art\.versione=(\d+)", l)
+        if m:
+            versions = max(versions, int(m.group(1)))
 
     # Versione vigente = senza imUpdate=true (le storiche lo hanno)
     current = [l for l in cands if "imUpdate=true" not in l]
     chosen = current[0] if current else cands[0]
-    return BASE + "/atto/" + chosen
+    return BASE + "/atto/" + chosen, versions
 
 
 def _parse_article(html: str) -> tuple[str, str, str]:
@@ -171,7 +180,7 @@ def fetch_article(ref: LawRef) -> ArticleResult:
                              error="Indica un numero di articolo per il testo completo. "
                                    "Apri l'atto su Normattiva dal link.")
 
-    art_url = _pick_article_link(page, ref.articolo)
+    art_url, versions = _pick_article_link(page, ref.articolo)
     if not art_url:
         return ArticleResult(ok=False, query_label=ref.label, act_title=act_title,
                              permalink=permalink,
@@ -199,6 +208,8 @@ def fetch_article(ref: LawRef) -> ArticleResult:
                              permalink=permalink,
                              error="Testo dell'articolo non estraibile. Apri l'atto su Normattiva.")
 
+    abrogato = bool(re.search(r"ARTICOLO ABROGATO", text, re.I))
     return ArticleResult(ok=True, query_label=ref.label, act_title=act_title,
                          article_heading=heading, text=text, in_force_from=in_force,
-                         permalink=permalink, updates=updates)
+                         permalink=permalink, updates=updates,
+                         abrogato=abrogato, versions=versions)

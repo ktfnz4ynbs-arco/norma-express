@@ -252,6 +252,39 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 82px 20px 0; }
   background: var(--bg-2); border: 1px dashed var(--line-strong); border-radius: 12px;
 }
 
+/* Riassunti estrattivi dalle fonti */
+.hit-sum {
+  margin: 9px 0 0; font-size: 14px; line-height: 1.6; color: var(--ink);
+  background: var(--bg-2); border-left: 3px solid var(--gold);
+  border-radius: 0 10px 10px 0; padding: 10px 13px;
+  animation: rise .35s var(--ease) both;
+}
+.hit-sum.loading {
+  color: var(--ink-faint); font-style: italic; border-left-color: var(--line-strong);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .hit-sum.loading { animation: none; } }
+.sum-link { color: var(--navy); font-weight: 600; font-size: 13px; text-decoration: none; white-space: nowrap; }
+.sum-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Massime giurisprudenziali (Brocardi) */
+.massima {
+  list-style: none; margin: 0 0 10px; padding: 14px 16px;
+  background: var(--official-bg); border: 1px solid transparent;
+  border-left: 3px solid var(--official); border-radius: 0 12px 12px 0;
+  animation: rise .35s var(--ease) both;
+}
+.massima-ref {
+  display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--official); margin-bottom: 5px;
+}
+.massima p { margin: 0 0 7px; font-size: 14px; line-height: 1.6; color: var(--ink); }
+
+/* Badge articolo abrogato */
+.m-abrogato { color: #b3261e; background: #fdecea; border-color: #f6c9c4; font-weight: 600; }
+@media (prefers-color-scheme: dark) { .m-abrogato { color: #ffb4a8; background: #3a1512; border-color: #5a201a; } }
+
 .banche { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 16px; }
 .banche-label {
   font-size: 11.5px; color: var(--ink-faint); margin: 0 0 10px; font-weight: 700;

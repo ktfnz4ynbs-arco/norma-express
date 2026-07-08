@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import enrich
 import lawref
 import search
 from normattiva import fetch_article
@@ -39,6 +40,12 @@ class Query(BaseModel):
     numero: Optional[str] = None
     anno: Optional[str] = None
     articolo: Optional[str] = None
+
+
+class EnrichReq(BaseModel):
+    query: str = ""
+    interp_urls: list = []
+    giuri_urls: list = []
 
 
 @app.get("/api/health")
@@ -74,6 +81,7 @@ def ricerca(q: Query):
                 "article_heading": a.article_heading, "text": a.text,
                 "in_force_from": a.in_force_from, "permalink": a.permalink,
                 "updates": a.updates, "error": a.error,
+                "abrogato": a.abrogato, "versions": a.versions,
             }
         interpretazioni = f_int.result()
         giurisprudenza = f_giu.result()
@@ -91,6 +99,12 @@ def ricerca(q: Query):
                       "terze e vanno verificate. Il testo dell'articolo e' tratto da Normattiva. "
                       "Questo strumento non costituisce parere legale.",
     }
+
+
+@app.post("/api/riassunti")
+def riassunti(req: EnrichReq):
+    """Riassunti estrattivi dalle fonti (frasi reali, tracciabili) + massime Brocardi."""
+    return enrich.enrich(req.query, req.interp_urls, req.giuri_urls)
 
 
 # --- Frontend statico (montato per ultimo cosi' le API hanno precedenza) ---

@@ -19,12 +19,25 @@ restituisce tre sezioni:
 
 ```
 backend/
-  app.py         # FastAPI: /api/ricerca (+ /api/health) e serve il frontend
+  app.py         # FastAPI: /api/ricerca, /api/riassunti (+ /api/health) e serve il frontend
   lawref.py      # parsing riferimento normativo (testo libero o campi) → URN Normattiva
-  normattiva.py  # recupero testo articolo da Normattiva
-  search.py      # ricerca web: Brave API → DuckDuckGo → deep-link banche dati
+  normattiva.py  # recupero testo articolo da Normattiva (+ flag abrogato, n. versioni)
+  search.py      # ricerca web: Brave(opz.) → Startpage(keyless) → DuckDuckGo → deep-link
+  enrich.py      # riassunti ESTRATTIVI dalle fonti + Brocardi (Spiegazione/Massime)
 frontend/        # index.html, style.css, app.js  (montato su /assets, index su /)
 ```
+
+## Riassunti dalle fonti (`enrich.py` + `/api/riassunti`)
+Meccanismo stile RegTech (Aptus.AI/Daitomic) ma **estrattivo, mai generativo**: frasi reali
+prese dalla pagina fonte, selezionate per pertinenza (scoring keyword), max ~420 char,
+sempre con link "Approfondisci alla fonte →". Il frontend chiama `/api/riassunti` DOPO aver
+mostrato i risultati (progressive enhancement: prima i link, poi i riassunti).
+- Caso speciale **brocardi.it** (pagina articolo `/artNNNN.html`): estrae la sezione
+  "Spiegazione" (→ interpretazione) e le **Massime** in `div.sentenza.corpoDelTesto`
+  (→ giurisprudenza, card verdi con estremi Cassazione). Attenzione all'encoding:
+  impostare `r.encoding = r.apparent_encoding`.
+- Frasi: proteggere le abbreviazioni giuridiche (art., Cass., n., …) prima dello split.
+- Aptus-style nel risultato articolo: `abrogato` (badge rosso) e `versions` (multivigenza).
 
 ## Decisioni chiave (fissate con l'utente)
 - **Niente generazione AI** delle interpretazioni: solo ricerca web reale con link, per

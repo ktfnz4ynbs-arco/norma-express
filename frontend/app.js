@@ -94,6 +94,64 @@ function render(data) {
   renderHits("#giuri-list", data.giurisprudenza, "Nessuna pronuncia trovata sul web. Usa le banche dati ufficiali qui sotto.");
   renderBanche(data.banche_dati);
   $("#disclaimer").textContent = data.disclaimer || "";
+  loadSummaries(data);
+}
+
+/* Riassunti estrattivi: frasi reali dalle fonti, caricate in modo progressivo. */
+async function loadSummaries(data) {
+  const take = (hits) => (hits || []).slice(0, 3).map((h) => h.url);
+  const interp_urls = take(data.interpretazioni);
+  const giuri_urls = take(data.giurisprudenza);
+  if (!interp_urls.length && !giuri_urls.length) return;
+
+  // placeholder di caricamento sotto i primi risultati
+  [...interp_urls, ...giuri_urls].forEach((u) => {
+    document.querySelectorAll(`.hit[data-url="${CSS.escape(u)}"]`).forEach((li) => {
+      if (!li.querySelector(".hit-sum")) {
+        const p = document.createElement("p");
+        p.className = "hit-sum loading";
+        p.textContent = "Estraggo il riassunto dalla fonte…";
+        li.appendChild(p);
+      }
+    });
+  });
+
+  try {
+    const res = await fetch("/api/riassunti", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: data.label || "", interp_urls, giuri_urls }),
+    });
+    const enr = await res.json();
+
+    // riempi i riassunti
+    document.querySelectorAll(".hit-sum.loading").forEach((p) => {
+      const li = p.closest(".hit");
+      const url = li && li.dataset.url;
+      const sum = enr.summaries && enr.summaries[url];
+      if (sum) {
+        p.classList.remove("loading");
+        p.innerHTML = `${esc(sum)} <a class="sum-link" href="${esc(url)}" target="_blank" rel="noopener">Approfondisci alla fonte →</a>`;
+      } else {
+        p.remove();
+      }
+    });
+
+    // massime Brocardi in testa alla giurisprudenza
+    const bro = enr.brocardi || {};
+    if (bro.massime && bro.massime.length) {
+      const ul = $("#giuri-list");
+      const blocks = bro.massime.map((m) => `
+        <li class="massima">
+          <span class="massima-ref">${esc(m.ref || "Massima")}</span>
+          <p>${esc(m.text)}</p>
+          <a class="sum-link" href="${esc(bro.massime_url)}" target="_blank" rel="noopener">Testo integrale e altre massime →</a>
+        </li>`).join("");
+      ul.insertAdjacentHTML("afterbegin", blocks);
+    }
+  } catch (err) {
+    document.querySelectorAll(".hit-sum.loading").forEach((p) => p.remove());
+  }
 }
 
 function renderArticle(a) {
@@ -107,6 +165,8 @@ function renderArticle(a) {
   const meta = [];
   if (a.act_title) meta.push(metaItem("Atto", a.act_title));
   if (a.in_force_from) meta.push(metaItem("In vigore dal", a.in_force_from));
+  if (a.versions > 1) meta.push(metaItem("Versioni dell'articolo", `${a.versions} (vigente: ultima)`));
+  if (a.abrogato) meta.push('<span class="m-item m-abrogato">⚠ Articolo abrogato</span>');
   $("#art-meta").innerHTML = meta.join("");
 
   const body = $("#art-body");
@@ -146,7 +206,7 @@ function renderHits(sel, hits, emptyMsg) {
     const trusted = h.trusted ? " trusted" : "";
     const verified = h.trusted ? '<span class="verified">fonte giuridica</span> · ' : "";
     const snip = h.snippet ? `<p class="snippet">${esc(h.snippet)}</p>` : "";
-    return `<li class="hit${trusted}">
+    return `<li class="hit${trusted}" data-url="${esc(h.url)}">
       <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
       ${snip}
       <span class="src"><span class="dot"></span>${verified}${esc(h.source)}</span>

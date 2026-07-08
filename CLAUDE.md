@@ -69,8 +69,13 @@ Non aggiungere fonti paywall nei risultati né nelle banche dati.
 **Flusso UI (vincolo utente): prima l'articolo, poi il resto.** Il frontend chiama in
 sequenza: `/api/articolo` (rapido, solo Normattiva → card articolo subito) →
 `/api/fonti` (ricerca web) → `/api/riassunti`. Nei risultati il RIASSUNTO è il contenuto
-principale (titolo non linkato); la fonte si apre solo col link esplicito
-"Apri la fonte diretta →" dentro il risultato. `/api/ricerca` resta per compatibilità.
+principale (titolo non linkato); il link "Apri la fonte diretta →" sta DENTRO il
+riassunto (vincolo utente). `/api/ricerca` resta per compatibilità.
+
+**VINCOLO UTENTE (2026-07-08): mai contenuto illeggibile.** I PDF/documenti binari sono
+esclusi dai risultati (`search.py::_DOC_RE`) e comunque scartati in `enrich.py`
+(check Content-Type HTML, magic bytes `%PDF-`, euristica `_readable`). Se un risultato
+resta senza riassunto né snippet, il frontend lo rimuove del tutto.
 
 Se le liste web sono vuote il frontend mostra un empty-state + i deep-link. È il comportamento atteso.
 

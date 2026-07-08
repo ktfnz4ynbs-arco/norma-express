@@ -117,8 +117,8 @@ function setBusy(b) {
   document.querySelectorAll(".go").forEach((x) => (x.disabled = b));
 }
 
-/* Riassunti estrattivi di TUTTE le fonti, caricati in modo progressivo:
-   riempiono la finestra "Sintesi dalle fonti" di ciascun pannello. */
+/* Una sola sintesi estrattiva per pannello: riempie la finestra
+   "Sintesi dalle fonti" di Interpretazione e Giurisprudenza. */
 async function loadSummaries(data) {
   const take = (hits) => (hits || []).map((h) => h.url);
   const interp_urls = take(data.interpretazioni);
@@ -133,36 +133,38 @@ async function loadSummaries(data) {
     });
     const enr = await res.json();
 
-    // sostituisci gli snippet provvisori con i riassunti estratti dalle fonti
-    document.querySelectorAll(".digest-text.provisional").forEach((p) => {
-      const item = p.closest(".digest-item");
-      const url = item && item.dataset.url;
-      const sum = enr.summaries && enr.summaries[url];
-      if (sum) {
-        p.classList.remove("provisional");
-        p.textContent = sum;
-      } else if (p.textContent.trim() === "Riassunto in preparazione…") {
-        // nessun riassunto leggibile e nessuno snippet: via dalla sintesi
-        item.remove();
-      }
-    });
-
-    // massime Brocardi in testa alla sintesi della giurisprudenza
-    const bro = enr.brocardi || {};
-    if (bro.massime && bro.massime.length) {
-      const digest = document.querySelector("#giuri-list .digest .block-title");
-      if (digest) {
-        const blocks = bro.massime.map((m) => `
-          <div class="massima">
-            <span class="massima-ref">${esc(m.ref || "Massima")}</span>
-            <p>${esc(m.text)}</p>
-            <a class="sum-link" href="${esc(bro.massime_url)}" target="_blank" rel="noopener">Testo integrale e altre massime →</a>
-          </div>`).join("");
-        digest.insertAdjacentHTML("afterend", blocks);
-      }
-    }
+    fillDigest("#interp-list", enr.interpretazione_sintesi, interp_urls.length);
+    fillDigest("#giuri-list", enr.giurisprudenza_sintesi, giuri_urls.length,
+               enr.brocardi || {});
   } catch (err) {
-    /* in caso di errore restano gli snippet provvisori: comunque leggibili */
+    ["#interp-list", "#giuri-list"].forEach((sel) => fillDigest(sel, "", 1));
+  }
+}
+
+function fillDigest(sel, sintesi, hasSources, brocardi) {
+  const box = document.querySelector(`${sel} .digest-unified`);
+  if (!box) return;
+  box.classList.remove("provisional");
+
+  if (sintesi) {
+    box.textContent = sintesi;
+  } else if (hasSources) {
+    box.innerHTML = '<span class="digest-note">Sintesi automatica non disponibile per questa ricerca. Consulta le fonti elencate qui sotto.</span>';
+  } else {
+    box.innerHTML = '<span class="digest-note">Nessuna fonte trovata.</span>';
+  }
+
+  // massime Cassazione (Brocardi) sotto la sintesi della giurisprudenza
+  const bro = brocardi || {};
+  if (bro.massime && bro.massime.length) {
+    const blocks = bro.massime.map((m) => `
+      <div class="massima">
+        <span class="massima-ref">${esc(m.ref || "Massima")}</span>
+        <p>${esc(m.text)}</p>
+        <a class="sum-link" href="${esc(bro.massime_url)}" target="_blank" rel="noopener">Testo integrale e altre massime →</a>
+      </div>`).join("");
+    box.insertAdjacentHTML("afterend",
+      `<p class="block-title massime-title">Massime della Cassazione</p>${blocks}`);
   }
 }
 
@@ -214,17 +216,8 @@ function renderHits(sel, hits, emptyMsg) {
     box.innerHTML = `<p class="empty-note">${esc(emptyMsg)}</p>`;
     return;
   }
-  // FINESTRA UNICA con i riassunti di tutte le fonti…
-  const digest = hits.map((h) => {
-    const trusted = h.trusted ? " trusted" : "";
-    const provisional = h.snippet || "Riassunto in preparazione…";
-    return `<div class="digest-item${trusted}" data-url="${esc(h.url)}">
-      <span class="digest-src">${esc(h.source)}</span>
-      <p class="digest-text provisional">${esc(provisional)}</p>
-    </div>`;
-  }).join("");
-
-  // …POI l'elenco delle fonti consultabili (link espliciti)
+  // UNA SOLA finestra di sintesi (riempita da loadSummaries)…
+  // …POI l'elenco delle fonti consultabili (link espliciti).
   const fonti = hits.map((h) => {
     const verified = h.trusted ? ' <span class="verified">· fonte gratuita</span>' : "";
     return `<li>
@@ -236,7 +229,9 @@ function renderHits(sel, hits, emptyMsg) {
   box.innerHTML = `
     <section class="digest">
       <p class="block-title">Sintesi dalle fonti</p>
-      ${digest}
+      <div class="digest-unified provisional">
+        <span class="spinner" aria-hidden="true"></span>Sto sintetizzando le fonti…
+      </div>
     </section>
     <section class="fonti">
       <p class="block-title">Fonti consultabili</p>

@@ -60,7 +60,12 @@ def _readable(text: str) -> bool:
 def _clean(s: str) -> str:
     s = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", s)
     s = re.sub(r"<[^>]+>", " ", s)
-    return re.sub(r"\s+", " ", _html.unescape(s)).strip()
+    s = _html.unescape(s)
+    # rimuovi marcatori-nota e rimandi tipici (es. Brocardi): "(1)", "[ 2058 ]"
+    s = re.sub(r"\(\s*\d+\s*\)", "", s)
+    s = re.sub(r"\[\s*\d+[\d,\s]*\]", "", s)
+    s = re.sub(r"\s+([.,;:)])", r"\1", s)
+    return re.sub(r"\s+", " ", s).strip()
 
 
 # --------------------------------------------------------- extractive summary
@@ -133,6 +138,53 @@ def batch_summaries(urls: list, query: str, max_workers: int = 6) -> dict:
     return out
 
 
+# ----------------------------------------------------- SINTESI UNICA (merge)
+def _scored_sentences(url: str, query: str, per_source: int = 4) -> list:
+    """Le frasi piu' pertinenti di una singola pagina: [(frase, punteggio)]."""
+    html = _get(url)
+    if not html:
+        return []
+    text = _main_text(html)
+    if not _readable(text):
+        return []
+    terms = _terms(query)
+    scored = [(s, _score(s, terms)) for s in _sentences(text) if _readable(s)]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return scored[:per_source]
+
+
+def unified_summary(urls: list, query: str, extra_sentences: Optional[list] = None,
+                    max_sentences: int = 6, max_chars: int = 950) -> str:
+    """UNA sola sintesi estrattiva che fonde le frasi piu' rilevanti di TUTTE
+    le fonti (frasi reali, deduplicate, ordinate per pertinenza)."""
+    pool = []
+    if urls:
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            futs = [ex.submit(_scored_sentences, u, query) for u in urls[:10]]
+            for f in as_completed(futs):
+                try:
+                    pool.extend(f.result())
+                except Exception:
+                    pass
+    if extra_sentences:  # es. la spiegazione di Brocardi: fonte forte -> boost
+        terms = _terms(query)
+        pool.extend((s, _score(s, terms) + 2) for s in extra_sentences if _readable(s))
+
+    seen, uniq = set(), []
+    for s, sc in sorted(pool, key=lambda x: x[1], reverse=True):
+        key = re.sub(r"[^a-z0-9]", "", s.lower())[:60]
+        if key and key not in seen:
+            seen.add(key)
+            uniq.append(s)
+        if len(uniq) >= max_sentences:
+            break
+
+    out = " ".join(uniq).strip()
+    if len(out) > max_chars:
+        out = out[:max_chars].rsplit(" ", 1)[0] + "…"
+    return out
+
+
 # ----------------------------------------------------------------- Brocardi
 def _is_brocardi_article(url: str) -> bool:
     return "brocardi.it" in url and re.search(r"/art\d+[a-z]*\.html", url) is not None
@@ -173,20 +225,25 @@ def brocardi_extract(url: str) -> dict:
 
 
 def enrich(query: str, interp_urls: list, giuri_urls: list) -> dict:
-    """Endpoint core: riassunti per tutti gli URL + estrazione speciale Brocardi."""
-    all_urls = list(dict.fromkeys((interp_urls or []) + (giuri_urls or [])))[:12]
+    """Core: UNA sintesi unica per l'interpretazione e UNA per la giurisprudenza
+    (merge estrattivo di tutte le fonti) + massime Cassazione da Brocardi."""
+    interp_urls = interp_urls or []
+    giuri_urls = giuri_urls or []
+    all_urls = list(dict.fromkeys(interp_urls + giuri_urls))
 
     brocardi_url = next((u for u in all_urls if _is_brocardi_article(u)), None)
-    result = {"summaries": {}, "brocardi": {}}
+    bro = brocardi_extract(brocardi_url) if brocardi_url else {}
+    extra = _sentences(bro["spiegazione"]) if bro.get("spiegazione") else None
 
     with ThreadPoolExecutor(max_workers=2) as ex:
-        f_sum = ex.submit(batch_summaries,
-                          [u for u in all_urls if u != brocardi_url], query)
-        f_bro = ex.submit(brocardi_extract, brocardi_url) if brocardi_url else None
-        result["summaries"] = f_sum.result()
-        if f_bro is not None:
-            bro = f_bro.result()
-            result["brocardi"] = bro
-            if bro.get("spiegazione"):
-                result["summaries"][brocardi_url] = bro["spiegazione"]
-    return result
+        f_int = ex.submit(unified_summary, interp_urls, query, extra)
+        f_giu = ex.submit(unified_summary, giuri_urls, query)
+        interp_sintesi = f_int.result()
+        giuri_sintesi = f_giu.result()
+
+    return {
+        "interpretazione_sintesi": interp_sintesi,
+        "giurisprudenza_sintesi": giuri_sintesi,
+        "brocardi": {"massime": bro.get("massime", []),
+                     "massime_url": bro.get("massime_url", "")},
+    }

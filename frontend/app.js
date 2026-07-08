@@ -51,6 +51,14 @@ formStruct.addEventListener("submit", (e) => {
 // --- Core ---
 const statusEl = $("#status");
 const resultsEl = $("#results");
+let currentLabel = "";
+
+// Approfondimento: domande sull'argomento
+$("#form-domanda").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const d = $("#domanda").value.trim();
+  if (d) askQuestion(d);
+});
 
 function showStatus(html, isError) {
   statusEl.innerHTML = html;
@@ -75,33 +83,35 @@ async function runSearch(payload) {
       return;
     }
     renderArticle(art.article);
-    setListLoading("#interp-list", "Cerco interpretazioni su fonti gratuite…");
-    setListLoading("#giuri-list", "Cerco giurisprudenza su fonti gratuite…");
+    currentLabel = art.label || "";
+    $("#sintesi-body").innerHTML =
+      '<div class="digest"><div class="digest-unified provisional"><span class="spinner" aria-hidden="true"></span>Sto sintetizzando interpretazione e giurisprudenza…</div></div>';
+    $("#massime-body").innerHTML = "";
+    $("#fonti-body").innerHTML = '<p class="empty-note loading-note"><span class="spinner" aria-hidden="true"></span>Cerco le fonti gratuite…</p>';
     $("#banche-links").innerHTML = "";
+    $("#domanda-risposta").innerHTML = "";
     $("#disclaimer").textContent = "";
     statusEl.classList.add("hidden");
     resultsEl.hidden = false;
     resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
 
-    // FASE 2 — poi il resto: interpretazioni e giurisprudenza
+    // FASE 2 — le fonti (interpretazione + giurisprudenza), elenco combinato
     const resFonti = await fetch("/api/fonti", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     const fonti = await resFonti.json();
-    if (!fonti.ok) {
-      renderHits("#interp-list", [], "Ricerca fonti non riuscita. Usa le banche dati qui sotto.");
-      renderHits("#giuri-list", [], "Ricerca fonti non riuscita. Usa le banche dati qui sotto.");
-      return;
-    }
-    renderHits("#interp-list", fonti.interpretazioni, "Nessuna interpretazione trovata su fonti gratuite.");
-    renderHits("#giuri-list", fonti.giurisprudenza, "Nessuna pronuncia trovata. Usa le banche dati gratuite qui sotto.");
+    const interp = (fonti.ok && fonti.interpretazioni) || [];
+    const giuri = (fonti.ok && fonti.giurisprudenza) || [];
+    const combined = dedupeByUrl([...interp, ...giuri]);
+    renderFonti(combined);
     renderBanche(fonti.banche_dati);
-    $("#disclaimer").textContent = fonti.disclaimer || "";
+    $("#disclaimer").textContent = fonti.disclaimer ||
+      "Sintesi e fonti provengono da ricerche web su fonti gratuite e vanno verificate. Il testo dell'articolo è tratto da Normattiva. Non costituisce parere legale.";
 
-    // FASE 3 — riassunti estrattivi (approfondimento progressivo)
-    loadSummaries(fonti);
+    // FASE 3 — la sintesi unica (interpretazione + giurisprudenza)
+    loadSintesi(interp.map((h) => h.url), giuri.map((h) => h.url));
   } catch (err) {
     showStatus('<span class="error-box">Impossibile contattare il server. Riprova.</span>', true);
   } finally {
@@ -109,52 +119,46 @@ async function runSearch(payload) {
   }
 }
 
-function setListLoading(sel, msg) {
-  $(sel).innerHTML = `<p class="empty-note loading-note"><span class="spinner" aria-hidden="true"></span>${esc(msg)}</p>`;
+function dedupeByUrl(hits) {
+  const seen = new Set();
+  return hits.filter((h) => !seen.has(h.url) && seen.add(h.url));
 }
 
 function setBusy(b) {
   document.querySelectorAll(".go").forEach((x) => (x.disabled = b));
 }
 
-/* Una sola sintesi estrattiva per pannello: riempie la finestra
-   "Sintesi dalle fonti" di Interpretazione e Giurisprudenza. */
-async function loadSummaries(data) {
-  const take = (hits) => (hits || []).map((h) => h.url);
-  const interp_urls = take(data.interpretazioni);
-  const giuri_urls = take(data.giurisprudenza);
-  if (!interp_urls.length && !giuri_urls.length) return;
-
+/* Una sola sintesi estrattiva (interpretazione + giurisprudenza) + massime. */
+async function loadSintesi(interp_urls, giuri_urls) {
+  if (!interp_urls.length && !giuri_urls.length) {
+    fillSintesi("", 0, {});
+    return;
+  }
   try {
     const res = await fetch("/api/riassunti", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: data.label || "", interp_urls, giuri_urls }),
+      body: JSON.stringify({ query: currentLabel, interp_urls, giuri_urls }),
     });
     const enr = await res.json();
-
-    fillDigest("#interp-list", enr.interpretazione_sintesi, interp_urls.length);
-    fillDigest("#giuri-list", enr.giurisprudenza_sintesi, giuri_urls.length,
-               enr.brocardi || {});
+    fillSintesi(enr.sintesi, interp_urls.length + giuri_urls.length, enr.brocardi || {});
   } catch (err) {
-    ["#interp-list", "#giuri-list"].forEach((sel) => fillDigest(sel, "", 1));
+    fillSintesi("", interp_urls.length + giuri_urls.length, {});
   }
 }
 
-function fillDigest(sel, sintesi, hasSources, brocardi) {
-  const box = document.querySelector(`${sel} .digest-unified`);
-  if (!box) return;
-  box.classList.remove("provisional");
-
-  if (sintesi) {
-    box.textContent = sintesi;
-  } else if (hasSources) {
-    box.innerHTML = '<span class="digest-note">Sintesi automatica non disponibile per questa ricerca. Consulta le fonti elencate qui sotto.</span>';
-  } else {
-    box.innerHTML = '<span class="digest-note">Nessuna fonte trovata.</span>';
+function fillSintesi(sintesi, hasSources, brocardi) {
+  const box = document.querySelector("#sintesi-body .digest-unified");
+  if (box) {
+    box.classList.remove("provisional");
+    if (sintesi) {
+      box.textContent = sintesi;
+    } else if (hasSources) {
+      box.innerHTML = '<span class="digest-note">Sintesi automatica non disponibile per questa ricerca. Consulta le fonti qui sotto o fai una domanda.</span>';
+    } else {
+      box.innerHTML = '<span class="digest-note">Nessuna fonte trovata per la sintesi.</span>';
+    }
   }
-
-  // massime Cassazione (Brocardi) sotto la sintesi della giurisprudenza
   const bro = brocardi || {};
   if (bro.massime && bro.massime.length) {
     const blocks = bro.massime.map((m) => `
@@ -163,9 +167,25 @@ function fillDigest(sel, sintesi, hasSources, brocardi) {
         <p>${esc(m.text)}</p>
         <a class="sum-link" href="${esc(bro.massime_url)}" target="_blank" rel="noopener">Testo integrale e altre massime →</a>
       </div>`).join("");
-    box.insertAdjacentHTML("afterend",
-      `<p class="block-title massime-title">Massime della Cassazione</p>${blocks}`);
+    $("#massime-body").innerHTML =
+      `<p class="block-title massime-title">Massime della Cassazione</p>${blocks}`;
   }
+}
+
+function renderFonti(hits) {
+  const box = $("#fonti-body");
+  if (!hits || !hits.length) {
+    box.innerHTML = '<p class="empty-note">Nessuna fonte gratuita trovata. Usa le banche dati ufficiali qui sotto.</p>';
+    return;
+  }
+  const items = hits.map((h) => {
+    const verified = h.trusted ? ' <span class="verified">· fonte gratuita</span>' : "";
+    return `<li>
+      <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
+      <span class="fonte-dom">${esc(h.source)}${verified}</span>
+    </li>`;
+  }).join("");
+  box.innerHTML = `<ul class="fonti-list">${items}</ul>`;
 }
 
 function renderArticle(a) {
@@ -210,33 +230,38 @@ function metaItem(label, val) {
   return `<span class="m-item">${esc(label)}: <strong>${esc(val)}</strong></span>`;
 }
 
-function renderHits(sel, hits, emptyMsg) {
-  const box = $(sel);
-  if (!hits || !hits.length) {
-    box.innerHTML = `<p class="empty-note">${esc(emptyMsg)}</p>`;
-    return;
+/* Approfondimento: risposta ESTRATTIVA a una domanda + rimando alle fonti. */
+async function askQuestion(domanda) {
+  const box = $("#domanda-risposta");
+  box.innerHTML = '<div class="risposta"><p class="digest-unified provisional"><span class="spinner" aria-hidden="true"></span>Cerco la risposta nelle fonti…</p></div>';
+  document.querySelectorAll("#form-domanda .go").forEach((b) => (b.disabled = true));
+  try {
+    const res = await fetch("/api/domanda", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: currentLabel, domanda }),
+    });
+    const d = await res.json();
+    if (!d.ok) {
+      box.innerHTML = `<p class="empty-note">${esc(d.error || "Riprova.")}</p>`;
+      return;
+    }
+    const fonti = (d.fonti || []).map((h) =>
+      `<li><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
+        <span class="fonte-dom">${esc(h.source)}</span></li>`).join("");
+    const risposta = d.risposta
+      ? `<div class="digest"><p class="block-title">Risposta dalle fonti</p><div class="digest-unified">${esc(d.risposta)}</div></div>`
+      : '<p class="empty-note">Non ho trovato un passaggio pertinente. Prova a riformulare o consulta le fonti qui sotto.</p>';
+    box.innerHTML = `<div class="risposta">
+      <p class="domanda-eco">« ${esc(domanda)} »</p>
+      ${risposta}
+      ${fonti ? `<p class="block-title fonti-domanda-title">Fonti per approfondire</p><ul class="fonti-list">${fonti}</ul>` : ""}
+    </div>`;
+  } catch (err) {
+    box.innerHTML = '<p class="empty-note">Impossibile contattare il server. Riprova.</p>';
+  } finally {
+    document.querySelectorAll("#form-domanda .go").forEach((b) => (b.disabled = false));
   }
-  // UNA SOLA finestra di sintesi (riempita da loadSummaries)…
-  // …POI l'elenco delle fonti consultabili (link espliciti).
-  const fonti = hits.map((h) => {
-    const verified = h.trusted ? ' <span class="verified">· fonte gratuita</span>' : "";
-    return `<li>
-      <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
-      <span class="fonte-dom">${esc(h.source)}${verified}</span>
-    </li>`;
-  }).join("");
-
-  box.innerHTML = `
-    <section class="digest">
-      <p class="block-title">Sintesi dalle fonti</p>
-      <div class="digest-unified provisional">
-        <span class="spinner" aria-hidden="true"></span>Sto sintetizzando le fonti…
-      </div>
-    </section>
-    <section class="fonti">
-      <p class="block-title">Fonti consultabili</p>
-      <ul class="fonti-list">${fonti}</ul>
-    </section>`;
 }
 
 function renderBanche(links) {

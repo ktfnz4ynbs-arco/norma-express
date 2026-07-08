@@ -48,6 +48,11 @@ class EnrichReq(BaseModel):
     giuri_urls: list = []
 
 
+class DomandaReq(BaseModel):
+    query: str = ""      # contesto: etichetta articolo (es. "Art. 2043 c.c.")
+    domanda: str = ""
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "norma-express"}
@@ -157,8 +162,24 @@ def fonti(q: Query):
 
 @app.post("/api/riassunti")
 def riassunti(req: EnrichReq):
-    """Riassunti estrattivi dalle fonti (frasi reali, tracciabili) + massime Brocardi."""
+    """Sintesi unica estrattiva (interpretazione + giurisprudenza) + massime Brocardi."""
     return enrich.enrich(req.query, req.interp_urls, req.giuri_urls)
+
+
+@app.post("/api/domanda")
+def domanda(req: DomandaReq):
+    """Risposta ESTRATTIVA a una domanda: cerca sul web (fonti gratuite), estrae i
+    passaggi piu' pertinenti alla domanda e rimanda alle fonti. Nessuna generazione AI."""
+    dom = (req.domanda or "").strip()
+    if not dom:
+        return {"ok": False, "error": "Scrivi una domanda."}
+    ctx = (req.query or "").strip()
+    hits = search.web_search(f"{ctx} {dom}".strip(), 6)
+    urls = [h["url"] for h in hits]
+    risposta = enrich.unified_summary(urls, dom, max_sentences=7, max_chars=1200)
+    fonti = [{"title": h["title"], "url": h["url"], "source": h["source"],
+              "trusted": h["trusted"]} for h in hits]
+    return {"ok": True, "risposta": risposta, "fonti": fonti}
 
 
 # --- Frontend statico (montato per ultimo cosi' le API hanno precedenza) ---

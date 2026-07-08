@@ -225,8 +225,8 @@ def brocardi_extract(url: str) -> dict:
 
 
 def enrich(query: str, interp_urls: list, giuri_urls: list) -> dict:
-    """Core: UNA sintesi unica per l'interpretazione e UNA per la giurisprudenza
-    (merge estrattivo di tutte le fonti) + massime Cassazione da Brocardi."""
+    """Core: UNA sola sintesi che fonde interpretazione + giurisprudenza di TUTTE
+    le fonti (merge estrattivo) + massime Cassazione da Brocardi."""
     interp_urls = interp_urls or []
     giuri_urls = giuri_urls or []
     all_urls = list(dict.fromkeys(interp_urls + giuri_urls))
@@ -235,15 +235,11 @@ def enrich(query: str, interp_urls: list, giuri_urls: list) -> dict:
     bro = brocardi_extract(brocardi_url) if brocardi_url else {}
     extra = _sentences(bro["spiegazione"]) if bro.get("spiegazione") else None
 
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        f_int = ex.submit(unified_summary, interp_urls, query, extra)
-        f_giu = ex.submit(unified_summary, giuri_urls, query)
-        interp_sintesi = f_int.result()
-        giuri_sintesi = f_giu.result()
+    sintesi = unified_summary(all_urls, query, extra,
+                              max_sentences=9, max_chars=1400)
 
     return {
-        "interpretazione_sintesi": interp_sintesi,
-        "giurisprudenza_sintesi": giuri_sintesi,
+        "sintesi": sintesi,
         "brocardi": {"massime": bro.get("massime", []),
                      "massime_url": bro.get("massime_url", "")},
     }

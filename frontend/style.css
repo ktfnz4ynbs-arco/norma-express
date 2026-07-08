@@ -253,6 +253,16 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 82px 20px 0; }
 .digest-note { color: var(--ink-soft); font-size: 14px; }
 .massime-title { margin: 18px 0 8px; }
 
+/* card icona domande */
+.ic-domande { color: var(--navy); background: var(--bg-2); border-color: transparent; }
+
+/* box "Approfondisci con una domanda" */
+.domande-hint { color: var(--ink-soft); font-size: 14px; margin: 0 0 14px; line-height: 1.55; }
+#card-domande .input-row { margin-bottom: 4px; }
+.domanda-eco { color: var(--navy); font-weight: 600; font-size: 15px; font-style: italic; margin: 18px 0 12px; }
+.risposta .digest { margin-bottom: 14px; }
+.fonti-domanda-title { margin: 4px 0 6px; }
+
 /* elenco fonti consultabili */
 .fonti-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .fonti-list li { padding: 10px 4px; }

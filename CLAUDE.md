@@ -70,14 +70,16 @@ Non aggiungere fonti paywall nei risultati né nelle banche dati.
 sequenza: `/api/articolo` (rapido, solo Normattiva → card articolo subito) →
 `/api/fonti` (ricerca web) → `/api/riassunti`. `/api/ricerca` resta per compatibilità.
 
-**Layout pannelli (vincolo utente 2026-07-08):** ogni pannello (Interpretazione /
-Giurisprudenza) ha DUE blocchi: prima la finestra **"Sintesi dalle fonti"** con UNA SOLA
-sintesi (merge estrattivo di tutte le fonti — `enrich.unified_summary`: raccoglie le frasi
-piu' pertinenti di ogni pagina, deduplica, ordina per pertinenza; la spiegazione Brocardi
-ha un boost), poi l'elenco **"Fonti consultabili"** con i link. Le massime Cassazione
-(Brocardi) vanno sotto la sintesi della giurisprudenza. `/api/riassunti` ritorna
-`interpretazione_sintesi`, `giurisprudenza_sintesi`, `brocardi{massime}`.
-`_clean()` rimuove i marcatori-nota `(1)`/`[2058]` tipici di Brocardi.
+**Layout risultati (vincolo utente 2026-07-08):** 4 card in ordine —
+1. **Articolo** (Normattiva).
+2. **Sintesi "Interpretazione e giurisprudenza"**: UNA SOLA sintesi che fonde interpretazione
+   + giurisprudenza di tutte le fonti (`enrich.unified_summary` → `enrich()` ritorna
+   `{sintesi, brocardi{massime}}`); sotto, le **Massime della Cassazione** (Brocardi).
+3. **Fonti consultabili**: elenco combinato dei link (interp+giuri, deduplicati) + banche dati.
+4. **Approfondisci con una domanda**: box Q&A → `POST /api/domanda {query,domanda}`. Risposta
+   **ESTRATTIVA** (nessuna generazione AI): cerca sul web `label+domanda`, estrae con
+   `unified_summary` i passaggi piu' pertinenti alla DOMANDA, e restituisce `{risposta, fonti[]}`
+   con i rimandi. `_clean()` rimuove i marcatori-nota `(1)`/`[2058]` tipici di Brocardi.
 
 **VINCOLO UTENTE (2026-07-08): mai contenuto illeggibile.** I PDF/documenti binari sono
 esclusi dai risultati (`search.py::_DOC_RE`) e comunque scartati in `enrich.py`

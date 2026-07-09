@@ -79,6 +79,16 @@ storiche `agg./orig.` e il chrome di pagina). Il frontend mostra la **card Indic
 chip-voci cliccabili; ogni voce porta una query `art N <legge>` che apre l'articolo.
 Modi: `article` (ref con articolo) · `index` (legge senza articolo o keyword) · `none`.
 
+**Fonti istituzionali (vincolo utente 2026-07-09) — CONTESTO SEPARATO.** Nav in alto
+("Ricerca norma" | "Fonti istituzionali"). `POST /api/istituzionali` risponde con tre
+blocchi: `gazzetta`, `parlamento`, `regionale`, ognuno `{results, portali}`. Implementati
+in `search.py::_institutional(query, prefer, n)` = ricerca web keyless (`_startpage`
+`drop_docs=False` → la Gazzetta pubblica PDF ufficiali!) ri-ordinata per priorita' dei
+domini del contesto (gazzettaufficiale.it; camera.it/senato.it; consigli/banche dati
+regionali) senza escludere gli altri. `portali` = link ufficiali (GU; Camera "Progetti di
+legge" leg19/126; Senato DDL iter; Normattiva `/legislazioneRegionale` = motore federato
+regionale). Frontend: vista `#results-ist` con 3 card (`#gu-body`, `#parl-body`, `#reg-body`).
+
 **Layout risultati (vincolo utente 2026-07-08):** 4 card in ordine —
 1. **Articolo** (Normattiva).
 2. **Sintesi "Interpretazione e giurisprudenza"**: UNA SOLA sintesi che fonde interpretazione

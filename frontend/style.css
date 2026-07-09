@@ -386,3 +386,12 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 82px 20px 0; }
   .card { padding: 20px 18px; }
   .card-head h2 { font-size: 20px; }
 }
+
+/* --- Modalità incorporata (?embed=1) ---
+   Usata quando l'app è mostrata in un iframe dentro un'altra applicazione
+   (es. la scheda "Fonti Normattiva" di POL·PEN Assistant): nasconde il brand
+   e compatta il hero, lasciando ricerca + risultati. */
+body.embed .brand { display: none; }
+body.embed .hero { padding-top: 22px; padding-bottom: 22px; }
+body.embed .hero-glow { opacity: .45; }
+body.embed main { padding-top: 12px; }

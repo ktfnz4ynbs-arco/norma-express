@@ -353,3 +353,21 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+
+/* --- Deep-link & modalità incorporata (embed) ---
+   Permette di aprire l'app già su una ricerca precisa (?q=...) e in versione
+   compatta (?embed=1). Serve per incorporarla DAL VIVO in un iframe (es. la
+   scheda "Fonti Normattiva" di POL·PEN Assistant, pre-caricata sulla norma del
+   caso): così l'incorporamento resta sempre allineato a questa app e ogni
+   miglioria di Norma Express vi appare automaticamente. */
+(function initFromUrl() {
+  const params = new URLSearchParams(location.search);
+  if (params.get("embed") === "1") document.body.classList.add("embed");
+  const q = (params.get("q") || "").trim();
+  if (q) {
+    const freeTab = document.querySelector('.mode-toggle [data-mode="free"]');
+    if (freeTab) freeTab.click();
+    $("#q").value = q;
+    formFree.requestSubmit();
+  }
+})();

@@ -70,6 +70,15 @@ Non aggiungere fonti paywall nei risultati né nelle banche dati.
 sequenza: `/api/articolo` (rapido, solo Normattiva → card articolo subito) →
 `/api/fonti` (ricerca web) → `/api/riassunti`. `/api/ricerca` resta per compatibilità.
 
+**Ricerca per parole chiave → INDICE della legge (vincolo utente 2026-07-08).** Se la query
+non individua un articolo preciso, `/api/articolo` risponde con `mode:"index"`: risolve la
+legge (`lawref.resolve_known` mappa curata `KNOWN_LAWS` → fallback `search.normattiva_url`
+via Startpage → `lawref.from_urn`) e `normattiva.fetch_index` estrae l'albero Normattiva
+(partizioni Titoli/Capi + numeri articolo dai link `numero_articolo`, scartando versioni
+storiche `agg./orig.` e il chrome di pagina). Il frontend mostra la **card Indice** con
+chip-voci cliccabili; ogni voce porta una query `art N <legge>` che apre l'articolo.
+Modi: `article` (ref con articolo) · `index` (legge senza articolo o keyword) · `none`.
+
 **Layout risultati (vincolo utente 2026-07-08):** 4 card in ordine —
 1. **Articolo** (Normattiva).
 2. **Sintesi "Interpretazione e giurisprudenza"**: UNA SOLA sintesi che fonde interpretazione

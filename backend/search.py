@@ -247,5 +247,13 @@ def deep_links(ref_label: str) -> list:
     ]
 
 
+def normattiva_url(query: str) -> str:
+    """Trova il permalink Normattiva della legge che corrisponde alla parola chiave."""
+    for h in _startpage(f"{query} normattiva", 10):
+        if "normattiva.it" in h.url and ("uri-res" in h.url or "N2Ls" in h.url):
+            return h.url
+    return ""
+
+
 def provider_status() -> str:
     return "brave" if BRAVE_KEY else "startpage+duckduckgo"

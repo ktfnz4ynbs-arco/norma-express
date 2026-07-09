@@ -90,7 +90,7 @@ function showStatus(html, isError) {
 
 async function runSearch(payload) {
   resultsEl.hidden = true;
-  showStatus('<span class="spinner" aria-hidden="true"></span>Recupero l’articolo da Normattiva…');
+  showStatus('<span class="spinner" aria-hidden="true"></span>Ricerca su Normattiva…');
   setBusy(true);
   try {
     // FASE 1 — prima di tutto: l'articolo preciso della norma
@@ -104,7 +104,11 @@ async function runSearch(payload) {
       showStatus(`<span class="error-box">${esc(art.error || "Errore nella ricerca.")}</span>`, true);
       return;
     }
-    renderArticle(art.article);
+    if (art.mode === "index") {
+      renderIndex(art.index);
+    } else {
+      renderArticle(art.article);
+    }
     currentLabel = art.label || "";
     $("#sintesi-body").innerHTML =
       '<div class="digest"><div class="digest-unified provisional"><span class="spinner" aria-hidden="true"></span>Sto sintetizzando interpretazione e giurisprudenza…</div>' +
@@ -220,6 +224,7 @@ function renderFonti(hits) {
 }
 
 function renderArticle(a) {
+  $("#card-index").classList.add("hidden");
   const card = $("#card-article");
   if (!a) { card.classList.add("hidden"); return; }
   card.classList.remove("hidden");
@@ -259,6 +264,42 @@ function renderArticle(a) {
 
 function metaItem(label, val) {
   return `<span class="m-item">${esc(label)}: <strong>${esc(val)}</strong></span>`;
+}
+
+/* Indice della legge: partizioni + voci-articolo cliccabili (navigazione). */
+function renderIndex(idx) {
+  $("#card-article").classList.add("hidden");
+  const card = $("#card-index");
+  card.classList.remove("hidden");
+
+  $("#index-title").textContent =
+    `${idx.act_title || "Indice della legge"} · ${idx.total} articoli`;
+
+  const groups = (idx.groups || []).map((g) => {
+    const chips = g.articles.map((a) =>
+      `<button type="button" class="voce" data-q="${esc(a.q)}">Art. ${esc(a.num)}</button>`
+    ).join("");
+    const head = g.partition
+      ? `<p class="index-part">${esc(g.partition)}</p>` : "";
+    return `<div class="index-group">${head}<div class="voci">${chips}</div></div>`;
+  }).join("");
+  $("#index-body").innerHTML = groups;
+
+  const link = $("#index-link");
+  if (idx.permalink) { link.href = idx.permalink; link.classList.remove("hidden"); }
+  else link.classList.add("hidden");
+
+  // click su una voce -> apre quell'articolo
+  $("#index-body").querySelectorAll(".voce").forEach((b) => {
+    b.addEventListener("click", () => {
+      const q = b.dataset.q;
+      $("#q").value = q;
+      // torna alla modalità libera e cerca
+      const freeTab = document.querySelector('.mode-toggle [data-mode="free"]');
+      if (freeTab) freeTab.click();
+      $("#form-free").requestSubmit();
+    });
+  });
 }
 
 /* Approfondimento: risposta ESTRATTIVA a una domanda + rimando alle fonti. */

@@ -27,6 +27,8 @@ try:
 except ImportError:
     pass
 
+import lawref
+import search
 from lawref import LawRef
 
 BASE = "https://www.normattiva.it"
@@ -213,3 +215,104 @@ def fetch_article(ref: LawRef) -> ArticleResult:
                          article_heading=heading, text=text, in_force_from=in_force,
                          permalink=permalink, updates=updates,
                          abrogato=abrogato, versions=versions)
+
+
+# ============================================================ INDICE / VOCI
+@dataclass
+class IndexResult:
+    ok: bool
+    label: str = ""
+    act_title: str = ""
+    permalink: str = ""
+    groups: list = field(default_factory=list)  # [{partition, articles:[{num,q}]}]
+    total: int = 0
+    error: str = ""
+
+
+_PARTIZ = re.compile(r"\b(LIBRO|TITOLO|CAPO|SEZIONE|PARTE|Capo|Titolo|Libro|Sezione|Parte)\b")
+_CHROME = ("normattiva", "presidenza del consiglio", "portale", "ita eng", "vai al")
+
+
+def _is_partition(lab: str) -> bool:
+    low = lab.lower()
+    if any(c in low for c in _CHROME) or len(lab) > 110:
+        return False
+    letters = [c for c in lab if c.isalpha()]
+    up = sum(1 for c in letters if c.isupper())
+    return bool(_PARTIZ.search(lab)) or (bool(letters) and up / len(letters) > 0.7)
+
+
+def resolve_law(query: str):
+    """Da una parola chiave alla legge: prima le leggi note, poi ricerca su Normattiva."""
+    ref = lawref.resolve_known(query)
+    if ref:
+        return ref
+    url = search.normattiva_url(query)
+    if not url:
+        return None
+    m = re.search(r"urn:nir:[^&\"'!]+", url)
+    if not m:
+        return None
+    clean_permalink = "https://www.normattiva.it/uri-res/N2Ls?" + m.group(0)
+    return lawref.from_urn(m.group(0), permalink_url=clean_permalink)
+
+
+def _parse_index(html: str, ref: "lawref.LawRef") -> list:
+    """Estrae l'albero: partizioni (Titoli/Capi) e articoli con la query per aprirli."""
+    # heading = div di sola partizione (testo + <br>), non inghiotte l'header pagina
+    heading_re = r"<div[^>]*>([^<][^>]*?(?:<br\s*/?>[^<]*)*)</div></span></div></li>"
+    art_re = (r"showArticle\('(?:/atto/caricaArticolo\?[^']+)',\s*this\);\""
+              r"\s*class=\"numero_articolo\"[^>]*>([^<]+)</a>")
+    combined = re.compile(heading_re + "|" + art_re, re.S)
+
+    short = ref.short()
+    groups, seen = [], set()
+    current = {"partition": "", "articles": []}
+    for m in combined.finditer(html):
+        if m.group(1) is not None:
+            lab = re.sub(r"<br/?>", " — ", m.group(1))
+            lab = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", lab)).strip(" —")
+            lab = re.sub(r"&agrave;", "à", lab)
+            lab = (lab.replace("&Agrave;", "À").replace("&egrave;", "è")
+                      .replace("&ograve;", "ò").replace("&eacute;", "é"))
+            lab = re.sub(r"(\s*—\s*){2,}", " — ", lab).strip(" —")
+            if _is_partition(lab):
+                if current["articles"]:
+                    groups.append(current)
+                current = {"partition": lab, "articles": []}
+        else:
+            num = re.sub(r"\s+", " ", m.group(2)).strip()
+            if re.match(r"^\d", num) and "agg" not in num.lower() and "orig" not in num.lower():
+                if num in seen:
+                    continue
+                seen.add(num)
+                current["articles"].append({"num": num, "q": f"art {num} {short}"})
+    if current["articles"]:
+        groups.append(current)
+    return groups
+
+
+def fetch_index(ref: "lawref.LawRef") -> IndexResult:
+    permalink = ref.permalink()
+    if not permalink:
+        return IndexResult(ok=False, label=ref.label, error="Legge non individuata.")
+    s = _session()
+    try:
+        r = s.get(permalink, timeout=TIMEOUT)
+        r.raise_for_status()
+    except requests.RequestException as e:
+        return IndexResult(ok=False, label=ref.label, permalink=permalink,
+                           error=f"Normattiva non raggiungibile: {e}")
+    page = r.text
+    title_m = re.search(r"<title>(.*?)</title>", page, re.S | re.I)
+    act_title = (re.sub(r"\s*-\s*Normattiva\s*$", "", title_m.group(1).strip())
+                 if title_m else ref.label)
+
+    groups = _parse_index(page, ref)
+    total = sum(len(g["articles"]) for g in groups)
+    if not total:
+        return IndexResult(ok=False, label=ref.label, act_title=act_title,
+                           permalink=permalink,
+                           error="Indice non estraibile. Apri l'atto su Normattiva.")
+    return IndexResult(ok=True, label=act_title, act_title=act_title,
+                       permalink=permalink, groups=groups, total=total)

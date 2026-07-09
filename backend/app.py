@@ -24,7 +24,7 @@ from pydantic import BaseModel
 import enrich
 import lawref
 import search
-from normattiva import fetch_article
+from normattiva import fetch_article, fetch_index, resolve_law
 
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -116,14 +116,21 @@ def _resolve_ref(q: Query):
     return ref, label
 
 
+def _index_payload(idx):
+    return {"ok": idx.ok, "act_title": idx.act_title, "label": idx.label,
+            "permalink": idx.permalink, "groups": idx.groups, "total": idx.total,
+            "error": idx.error}
+
+
 @app.post("/api/articolo")
 def articolo(q: Query):
-    """Solo l'articolo da Normattiva: risposta rapida, mostrata per prima."""
+    """Articolo preciso, OPPURE indice della legge se la ricerca e' per parole chiave."""
     ref, label = _resolve_ref(q)
     if not label:
         return {"ok": False, "error": "Inserisci un articolo di legge o una richiesta."}
-    article = None
-    if ref:
+
+    # 1) Riferimento con articolo -> il testo dell'articolo
+    if ref and ref.articolo:
         a = fetch_article(ref)
         article = {
             "ok": a.ok, "query_label": a.query_label, "act_title": a.act_title,
@@ -132,8 +139,20 @@ def articolo(q: Query):
             "updates": a.updates, "error": a.error,
             "abrogato": a.abrogato, "versions": a.versions,
         }
-    return {"ok": True, "label": label, "reference_found": ref is not None,
-            "article": article}
+        return {"ok": True, "mode": "article", "label": label,
+                "reference_found": True, "article": article}
+
+    # 2) Legge senza articolo, o parola chiave -> INDICE / voci della legge
+    law = ref or resolve_law(q.query or label)
+    if law:
+        idx = fetch_index(law)
+        if idx.ok:
+            return {"ok": True, "mode": "index", "label": idx.label,
+                    "reference_found": True, "index": _index_payload(idx)}
+
+    # 3) Nessuna legge individuata -> solo ricerca web (interpretazione/giurisprudenza)
+    return {"ok": True, "mode": "none", "label": label,
+            "reference_found": False, "article": None}
 
 
 @app.post("/api/fonti")

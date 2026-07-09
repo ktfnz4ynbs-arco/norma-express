@@ -59,6 +59,7 @@ class LawRef:
     anno: Optional[int]           # anno atto
     articolo: Optional[str]       # numero articolo come stringa (es. "2043", "2-bis")
     label: str = ""               # etichetta leggibile
+    permalink_url: Optional[str] = None  # permalink Normattiva risolto (fallback)
 
     def urn(self) -> Optional[str]:
         token = URN_TYPES.get(self.tipo)
@@ -77,7 +78,19 @@ class LawRef:
 
     def permalink(self) -> Optional[str]:
         u = self.urn()
-        return f"https://www.normattiva.it/uri-res/N2Ls?{u}" if u else None
+        if u:
+            return f"https://www.normattiva.it/uri-res/N2Ls?{u}"
+        return self.permalink_url  # atto risolto per keyword con token URN atipico
+
+    def short(self) -> str:
+        """Riferimento breve per costruire query per-articolo (es. 'legge 354/1975')."""
+        names = {"legge": "legge", "decreto legislativo": "dlgs",
+                 "decreto-legge": "decreto-legge", "dpr": "dpr",
+                 "regio decreto": "regio decreto"}
+        kw = names.get(self.tipo, "legge")
+        if self.numero and self.anno:
+            return f"{kw} {self.numero}/{self.anno}"
+        return self.label
 
 
 def _find_article(text: str) -> Optional[str]:
@@ -133,6 +146,68 @@ def parse(query: str) -> Optional[LawRef]:
                       label=_label(tipo, numero, anno, articolo))
 
     return None
+
+
+# Leggi note per nome comune -> (tipo, numero, anno). Risoluzione istantanea
+# per parole chiave frequenti (il resto passa dal fallback web su normattiva.it).
+KNOWN_LAWS = [
+    (r"ordinamento penitenziario", ("legge", 354, 1975)),
+    (r"statuto (dei|del)? ?lavoratori", ("legge", 300, 1970)),
+    (r"legge sul procedimento amministrativo|procedimento amministrativo", ("legge", 241, 1990)),
+    (r"codice della strada", ("decreto legislativo", 285, 1992)),
+    (r"codice del consumo", ("decreto legislativo", 206, 2005)),
+    (r"codice (della )?privacy", ("decreto legislativo", 196, 2003)),
+    (r"codice del processo amministrativo", ("decreto legislativo", 104, 2010)),
+    (r"codice dell'?ambiente|testo unico ambientale", ("decreto legislativo", 152, 2006)),
+    (r"codice antimafia", ("decreto legislativo", 159, 2011)),
+    (r"testo unico (sull'?)?immigrazione", ("decreto legislativo", 286, 1998)),
+    (r"testo unico (sugli|degli)? ?stupefacenti", ("dpr", 309, 1990)),
+    (r"testo unico edilizia", ("dpr", 380, 2001)),
+    (r"testo unico bancario|\btub\b", ("decreto legislativo", 385, 1993)),
+    (r"testo unico (della )?finanza|\btuf\b", ("decreto legislativo", 58, 1998)),
+    (r"legge fallimentare", ("regio decreto", 267, 1942)),
+    (r"legge biagi", ("decreto legislativo", 276, 2003)),
+    (r"codice del turismo", ("decreto legislativo", 79, 2011)),
+    (r"gdpr|regolamento generale.*protezione dei dati", ("regolamento_ue", 679, 2016)),
+]
+
+# Reverse: token URN autorita' -> tipo canonico
+_URN_TOKEN_MAP = [
+    ("decreto.legislativo", "decreto legislativo"),
+    ("decreto.legge", "decreto-legge"),
+    ("decreto.del.presidente.della.repubblica", "dpr"),
+    ("presidente.repubblica:decreto", "dpr"),
+    ("regio.decreto", "regio decreto"),
+    ("legge", "legge"),
+]
+
+
+def resolve_known(query: str) -> Optional[LawRef]:
+    """Se la query nomina una legge nota (senza numero), restituisce il LawRef."""
+    q = (query or "").lower()
+    for pattern, (tipo, numero, anno) in KNOWN_LAWS:
+        if re.search(pattern, q):
+            if tipo == "regolamento_ue":  # non su Normattiva: nessun indice
+                return None
+            return LawRef(tipo=tipo, numero=numero, anno=anno, articolo=None,
+                          label=_label(tipo, numero, anno, None))
+    return None
+
+
+def from_urn(urn: str, permalink_url: Optional[str] = None) -> Optional[LawRef]:
+    """Costruisce un LawRef da un URN Normattiva (es. risolto via ricerca web)."""
+    m = re.search(r"urn:nir:(.+?):(\d{4})(?:-\d{2}-\d{2})?;(\d+)", urn)
+    if not m:
+        return None
+    token, anno, numero = m.group(1), int(m.group(2)), int(m.group(3))
+    tipo = "legge"
+    for frag, canonical in _URN_TOKEN_MAP:
+        if frag in token:
+            tipo = canonical
+            break
+    ref = LawRef(tipo=tipo, numero=numero, anno=anno, articolo=None,
+                 label=_label(tipo, numero, anno, None), permalink_url=permalink_url)
+    return ref
 
 
 def from_fields(tipo: str, numero: str, anno: str, articolo: str) -> Optional[LawRef]:

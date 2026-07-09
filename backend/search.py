@@ -84,9 +84,11 @@ def _strip(s: str) -> str:
 _DOC_RE = re.compile(r"\.(pdf|docx?|pptx?|xlsx?|rtf|zip)(?:$|[?#])", re.I)
 
 
-def _rank(hits: list, n: int) -> list:
-    # niente documenti binari (PDF/Office): non riassumibili in modo leggibile
-    hits = [h for h in hits if not _DOC_RE.search(h.url)]
+def _rank(hits: list, n: int, drop_docs: bool = True) -> list:
+    # di norma niente documenti binari (non riassumibili); ma per le fonti
+    # istituzionali (es. Gazzetta Ufficiale) i PDF ufficiali vanno tenuti.
+    if drop_docs:
+        hits = [h for h in hits if not _DOC_RE.search(h.url)]
     hits.sort(key=lambda h: TRUSTED.get(h.source, 0), reverse=True)
     return hits[:n]
 
@@ -164,7 +166,7 @@ def _ddg(query: str, n: int) -> list:
 
 
 # --------------------------------------------------------- Startpage (keyless)
-def _startpage(query: str, n: int) -> list:
+def _startpage(query: str, n: int, drop_docs: bool = True) -> list:
     """Risultati Google via Startpage: nessuna API key, nessuna registrazione."""
     try:
         r = requests.get(
@@ -195,7 +197,7 @@ def _startpage(query: str, n: int) -> list:
         seen.add(dom)
         hits.append(Hit(title=title, url=url, snippet=snips[i] if i < len(snips) else "",
                         source=dom, trusted=dom in TRUSTED))
-    return _rank(hits, n)
+    return _rank(hits, n, drop_docs)
 
 
 # --------------------------------------------------------------------- public
@@ -245,6 +247,52 @@ def deep_links(ref_label: str) -> list:
         {"name": "Ricerca web generale",
          "url": f"https://duckduckgo.com/?q={q}+giurisprudenza"},
     ]
+
+
+# ================================================== FONTI ISTITUZIONALI
+def _institutional(query: str, prefer: list, n: int = 8) -> list:
+    """Ricerca web (keyless) ri-ordinata dando priorita' ai domini del contesto.
+    Tiene i PDF: per le fonti istituzionali sono i documenti ufficiali."""
+    hits = _startpage(query, 14, drop_docs=False)
+    if not hits:
+        hits = _ddg(query, 14)
+
+    def pref_score(h):
+        for i, d in enumerate(prefer):
+            if d in h.source:
+                return len(prefer) - i
+        return -1  # domini non prioritari in coda ma non esclusi
+
+    hits.sort(key=pref_score, reverse=True)
+    return [asdict(h) for h in hits[:n]]
+
+
+def gazzetta_ufficiale(query: str) -> dict:
+    hits = _institutional(f"gazzetta ufficiale {query}", ["gazzettaufficiale.it"])
+    return {"results": hits, "portali": [
+        {"name": "Gazzetta Ufficiale — ricerca", "url": "https://www.gazzettaufficiale.it/"},
+        {"name": "GU Serie Generale", "url": "https://www.gazzettaufficiale.it/gazzetta/serie_generale/caricaDettaglio"},
+    ]}
+
+
+def parlamento(query: str) -> dict:
+    hits = _institutional(
+        f"{query} disegno di legge proposta di legge iter parlamentare",
+        ["camera.it", "senato.it", "openpolis.it"])
+    return {"results": hits, "portali": [
+        {"name": "Camera — Progetti di legge", "url": "https://www.camera.it/leg19/126"},
+        {"name": "Senato — Disegni di legge (iter)", "url": "https://www.senato.it/leg/19/BGT/Schede/Ddliter/index.html"},
+    ]}
+
+
+def regionale(query: str) -> dict:
+    hits = _institutional(
+        f"{query} legge regionale consiglio regionale",
+        ["consiglio.regione", "regione.", "normelombardia", "arianna"])
+    return {"results": hits, "portali": [
+        {"name": "Normattiva — Motore federato regionale",
+         "url": "https://www.normattiva.it/legislazioneRegionale"},
+    ]}
 
 
 def normattiva_url(query: str) -> str:

@@ -179,6 +179,28 @@ def fonti(q: Query):
     }
 
 
+@app.post("/api/istituzionali")
+def istituzionali(q: Query):
+    """Contesto separato: Gazzetta Ufficiale, lavori parlamentari (proposte di
+    legge) e motore federato regionale di Normattiva. Ricerca web keyless per
+    contesto, con link ai portali ufficiali."""
+    query = (q.query or "").strip()
+    if not query:
+        return {"ok": False, "error": "Inserisci una parola chiave o un riferimento."}
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        fg = ex.submit(search.gazzetta_ufficiale, query)
+        fp = ex.submit(search.parlamento, query)
+        fr = ex.submit(search.regionale, query)
+        return {
+            "ok": True, "query": query,
+            "gazzetta": fg.result(),
+            "parlamento": fp.result(),
+            "regionale": fr.result(),
+            "disclaimer": "Risultati da ricerca web su portali istituzionali, da "
+                          "verificare sulle fonti ufficiali. Non costituisce parere legale.",
+        }
+
+
 @app.post("/api/riassunti")
 def riassunti(req: EnrichReq):
     """Sintesi unica estrattiva (interpretazione + giurisprudenza) + massime Brocardi."""

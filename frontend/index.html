@@ -24,7 +24,12 @@
         </div>
       </header>
 
-      <section class="search-panel" aria-label="Ricerca">
+      <nav class="context-nav" role="tablist" aria-label="Contesto">
+        <button role="tab" class="ctx-tab active" data-ctx="norma" aria-selected="true">Ricerca norma</button>
+        <button role="tab" class="ctx-tab" data-ctx="ist" aria-selected="false">Fonti istituzionali</button>
+      </nav>
+
+      <section class="search-panel" id="panel-norma" aria-label="Ricerca">
         <div class="mode-toggle" role="tablist" aria-label="Modalità di ricerca">
           <button role="tab" id="tab-free" aria-selected="true" class="active" data-mode="free">Ricerca libera</button>
           <button role="tab" id="tab-struct" aria-selected="false" data-mode="struct">Ricerca strutturata</button>
@@ -75,11 +80,68 @@
           <button type="submit" class="go full">Cerca</button>
         </form>
       </section>
+
+      <!-- Pannello ricerca: Fonti istituzionali -->
+      <section class="search-panel hidden" id="panel-ist" aria-label="Fonti istituzionali">
+        <form id="form-ist" class="search-form" autocomplete="off">
+          <label class="sr-only" for="qi">Parola chiave o riferimento</label>
+          <div class="input-row">
+            <svg class="in-ic" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input id="qi" name="qi" type="text" placeholder="Es. «riforma Cartabia», «salario minimo», «rifiuti Lombardia»" />
+            <button type="submit" class="go">Cerca</button>
+          </div>
+          <p class="ist-hint">Cerca su tre fonti istituzionali: <strong>Gazzetta Ufficiale</strong>, <strong>lavori parlamentari</strong> sulle proposte di legge e <strong>motore federato regionale</strong> di Normattiva.</p>
+        </form>
+      </section>
     </div>
   </div>
 
   <main>
     <section id="status" class="status hidden" aria-live="polite"></section>
+
+    <!-- Risultati: Fonti istituzionali -->
+    <section id="results-ist" class="results" hidden>
+      <article class="card" id="card-gazzetta">
+        <header class="card-head">
+          <span class="card-ic ic-gu" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h13l3 3v13H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
+          </span>
+          <div class="card-head-txt">
+            <span class="badge badge-official">Fonte ufficiale</span>
+            <h2>Gazzetta Ufficiale</h2>
+          </div>
+        </header>
+        <div class="ist-body" id="gu-body"></div>
+      </article>
+
+      <article class="card" id="card-parlamento">
+        <header class="card-head">
+          <span class="card-ic ic-parl" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21h16M5 21V10M9 21V10M15 21V10M19 21V10M3 10h18L12 3z"/></svg>
+          </span>
+          <div class="card-head-txt">
+            <span class="badge badge-official">Parlamento · proposte di legge</span>
+            <h2>Lavori parlamentari</h2>
+          </div>
+        </header>
+        <div class="ist-body" id="parl-body"></div>
+      </article>
+
+      <article class="card" id="card-regionale">
+        <header class="card-head">
+          <span class="card-ic ic-reg" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+          </span>
+          <div class="card-head-txt">
+            <span class="badge badge-official">Normattiva · federato regionale</span>
+            <h2>Legislazione regionale</h2>
+          </div>
+        </header>
+        <div class="ist-body" id="reg-body"></div>
+      </article>
+
+      <p class="disclaimer" id="disclaimer-ist"></p>
+    </section>
 
     <section id="results" class="results" hidden>
       <!-- Articolo -->

@@ -83,6 +83,22 @@ body {
 }
 .tagline { margin: 4px 0 0; color: #c3cede; font-size: 14.5px; letter-spacing: .01em; }
 
+/* --------------------------------------------------- CONTEXT NAV (hero) */
+.context-nav {
+  display: inline-flex; gap: 4px; margin-bottom: 16px;
+  background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 11px; padding: 4px;
+}
+.ctx-tab {
+  border: 0; background: transparent; color: #c3cede; cursor: pointer;
+  font: inherit; font-weight: 600; font-size: 13.5px; padding: 8px 18px; border-radius: 8px;
+  transition: background .2s var(--ease), color .2s;
+}
+.ctx-tab.active { background: var(--gold); color: #10141c; }
+.ctx-tab:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+.ist-hint { margin: 14px 2px 0; font-size: 13px; color: var(--ink-soft); line-height: 1.55; }
+
 /* --------------------------------------------------------- SEARCH PANEL */
 .search-panel {
   position: relative; background: var(--surface);
@@ -252,6 +268,27 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 82px 20px 0; }
 .digest-unified .spinner { width: 16px; height: 16px; margin-right: 8px; vertical-align: -3px; }
 .digest-note { color: var(--ink-soft); font-size: 14px; }
 .massime-title { margin: 18px 0 8px; }
+
+/* Fonti istituzionali: icone contesto + liste */
+.ic-gu { color: var(--official); background: var(--official-bg); border-color: transparent; }
+.ic-parl, .ic-reg { color: var(--navy); background: var(--bg-2); }
+.ist-list { list-style: none; margin: 0; padding: 0; }
+.ist-list li { padding: 12px 4px; }
+.ist-list li + li { border-top: 1px solid var(--line); }
+.ist-list a { color: var(--navy); font-weight: 600; font-size: 15px; text-decoration: none; line-height: 1.4; }
+.ist-list a:hover { text-decoration: underline; text-underline-offset: 2px; }
+.ist-list a::after { content: " ↗"; color: var(--gold-2); font-weight: 400; }
+.ist-snip { color: var(--ink-soft); font-size: 13.5px; margin: 4px 0 0; line-height: 1.5; }
+.ist-portali {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  margin-top: 14px; border-top: 1px solid var(--line); padding-top: 13px;
+}
+.ist-portali-label {
+  font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--ink-faint);
+}
+.ist-portali a { color: var(--navy); font-weight: 600; font-size: 13.5px; text-decoration: none; }
+.ist-portali a:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* Indice della legge: partizioni + voci-articolo */
 .index-hint { margin: 0 0 16px; font-size: 13.5px; color: var(--ink-soft); }

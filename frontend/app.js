@@ -47,6 +47,30 @@ document.querySelectorAll(".chip").forEach((c) => {
   });
 });
 
+// --- Context switch: Ricerca norma / Fonti istituzionali ---
+const resultsIstEl = () => $("#results-ist");
+document.querySelectorAll(".ctx-tab").forEach((t) => {
+  t.addEventListener("click", () => {
+    document.querySelectorAll(".ctx-tab").forEach((x) => {
+      x.classList.remove("active"); x.setAttribute("aria-selected", "false");
+    });
+    t.classList.add("active"); t.setAttribute("aria-selected", "true");
+    const ist = t.dataset.ctx === "ist";
+    $("#panel-norma").classList.toggle("hidden", ist);
+    $("#panel-ist").classList.toggle("hidden", !ist);
+    // nascondi i risultati dell'altro contesto
+    resultsEl.hidden = true;
+    $("#results-ist").hidden = true;
+    statusEl.classList.add("hidden");
+  });
+});
+
+$("#form-ist").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const q = $("#qi").value.trim();
+  if (q) runIstituzionali(q);
+});
+
 // --- Submit handlers ---
 formFree.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -90,6 +114,7 @@ function showStatus(html, isError) {
 
 async function runSearch(payload) {
   resultsEl.hidden = true;
+  $("#results-ist").hidden = true;
   showStatus('<span class="spinner" aria-hidden="true"></span>Ricerca su Normattiva…');
   setBusy(true);
   try {
@@ -153,6 +178,58 @@ function dedupeByUrl(hits) {
 
 function setBusy(b) {
   document.querySelectorAll(".go").forEach((x) => (x.disabled = b));
+}
+
+/* ---- Fonti istituzionali: GU, Parlamento, Regionale (contesto separato) ---- */
+async function runIstituzionali(query) {
+  resultsEl.hidden = true;
+  $("#results-ist").hidden = true;
+  showStatus('<span class="spinner" aria-hidden="true"></span>Cerco su Gazzetta Ufficiale, Parlamento e portali regionali…');
+  setBusy(true);
+  try {
+    const res = await fetch("/api/istituzionali", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    });
+    const d = await res.json();
+    if (!d.ok) {
+      showStatus(`<span class="error-box">${esc(d.error || "Errore nella ricerca.")}</span>`, true);
+      return;
+    }
+    fillIst("#gu-body", d.gazzetta);
+    fillIst("#parl-body", d.parlamento);
+    fillIst("#reg-body", d.regionale);
+    $("#disclaimer-ist").textContent = d.disclaimer || "";
+    statusEl.classList.add("hidden");
+    $("#results-ist").hidden = false;
+    $("#results-ist").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (err) {
+    showStatus('<span class="error-box">Impossibile contattare il server. Riprova.</span>', true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function fillIst(sel, ctx) {
+  const box = $(sel);
+  const results = (ctx && ctx.results) || [];
+  const portali = (ctx && ctx.portali) || [];
+  const list = results.length
+    ? `<ul class="ist-list">${results.map((h) => {
+        const snip = h.snippet ? `<p class="ist-snip">${esc(h.snippet)}</p>` : "";
+        return `<li>
+          <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
+          ${snip}
+          <span class="fonte-dom">${esc(h.source)}</span>
+        </li>`;
+      }).join("")}</ul>`
+    : '<p class="empty-note">Nessun risultato trovato per questa fonte. Prova con altre parole chiave o apri il portale ufficiale.</p>';
+  const portalLinks = portali.map((p) =>
+    `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.name)} →</a>`
+  ).join("");
+  box.innerHTML = list +
+    `<div class="ist-portali"><span class="ist-portali-label">Portale ufficiale:</span>${portalLinks}</div>`;
 }
 
 /* Una sola sintesi estrattiva (interpretazione + giurisprudenza) + massime. */

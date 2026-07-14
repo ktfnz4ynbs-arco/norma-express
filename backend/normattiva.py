@@ -50,6 +50,7 @@ class ArticleResult:
     error: str = ""
     abrogato: bool = False      # rilevamento automatico stato abrogazione
     versions: int = 0           # numero versioni dell'articolo (multivigenza)
+    vigenza: str = ""           # data storica richiesta (AAAA-MM-GG) per il link !vig=
 
 
 def _session() -> requests.Session:
@@ -66,9 +67,11 @@ def _clean(node) -> str:
     return txt.strip()
 
 
-def _pick_article_link(html: str, articolo: Optional[str]) -> tuple:
+def _pick_article_link(html: str, articolo: Optional[str], flag: str = "0") -> tuple:
     """Trova il link caricaArticolo dell'articolo richiesto (versione vigente)
-    e il numero di versioni esistenti (multivigenza)."""
+    e il numero di versioni esistenti (multivigenza). `flag` = flagTipoArticolo:
+    per i codici (allegati di R.D.) seleziona l'annesso giusto (0=corpo atto,
+    1/2/... = allegato), evitando di prendere l'articolo omonimo del preambolo."""
     links = re.findall(r'caricaArticolo\?[^"\'<> ]+', html)
     if not links:
         return None, 0
@@ -88,9 +91,12 @@ def _pick_article_link(html: str, articolo: Optional[str]) -> tuple:
         if m:
             versions = max(versions, int(m.group(1)))
 
+    # Seleziona l'annesso corretto (flagTipoArticolo); ripiega su tutti se assente
+    flagged = [l for l in cands if f"art.flagTipoArticolo={flag}" in l]
+    pool = flagged or cands
     # Versione vigente = senza imUpdate=true (le storiche lo hanno)
-    current = [l for l in cands if "imUpdate=true" not in l]
-    chosen = current[0] if current else cands[0]
+    current = [l for l in pool if "imUpdate=true" not in l]
+    chosen = current[0] if current else pool[0]
     return BASE + "/atto/" + chosen, versions
 
 
@@ -152,8 +158,13 @@ def _parse_updates(page_html: str, articolo: Optional[str]) -> list:
 
 
 def fetch_article(ref: LawRef) -> ArticleResult:
+    # per l'ESTRAZIONE usiamo sempre il testo vigente (permalink senza !vig=);
+    # la data storica eventuale serve solo a costruire il link "testo a una data".
+    requested_vig = ref.vigenza
+    ref.vigenza = None
     urn = ref.urn()
     permalink = ref.permalink()
+    ref.vigenza = requested_vig
     if not urn or not permalink:
         return ArticleResult(ok=False, query_label=ref.label,
                              error="Riferimento normativo non valido o incompleto.")
@@ -182,7 +193,7 @@ def fetch_article(ref: LawRef) -> ArticleResult:
                              error="Indica un numero di articolo per il testo completo. "
                                    "Apri l'atto su Normattiva dal link.")
 
-    art_url, versions = _pick_article_link(page, ref.articolo)
+    art_url, versions = _pick_article_link(page, ref.articolo, ref.flag_allegato())
     if not art_url:
         return ArticleResult(ok=False, query_label=ref.label, act_title=act_title,
                              permalink=permalink,
@@ -214,7 +225,8 @@ def fetch_article(ref: LawRef) -> ArticleResult:
     return ArticleResult(ok=True, query_label=ref.label, act_title=act_title,
                          article_heading=heading, text=text, in_force_from=in_force,
                          permalink=permalink, updates=updates,
-                         abrogato=abrogato, versions=versions)
+                         abrogato=abrogato, versions=versions,
+                         vigenza=requested_vig or "")
 
 
 # ============================================================ INDICE / VOCI

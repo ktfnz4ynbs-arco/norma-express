@@ -247,6 +247,26 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 82px 20px 0; }
 }
 .src-link:hover { border-color: var(--gold); gap: 8px; }
 
+/* Multivigenza: testo a una data storica */
+.art-vigenza {
+  margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line-strong);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+}
+.art-vigenza:empty { display: none; }
+.vig-label { font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+.vig-date {
+  font: inherit; font-size: 14px; padding: 6px 10px; color: var(--ink);
+  background: var(--bg-2); border: 1.5px solid var(--line-strong); border-radius: 8px;
+}
+.vig-date:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-soft); }
+.vig-go {
+  font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  color: var(--navy); background: var(--bg-2); border: 1px solid var(--line-strong);
+  border-radius: 8px; padding: 7px 13px; transition: border-color .15s;
+}
+.vig-go:hover { border-color: var(--gold); }
+.vig-note { flex-basis: 100%; margin: 4px 0 0; font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; }
+
 /* --------------------------------------------- SINTESI + FONTI (pannelli) */
 .panel-body { display: flex; flex-direction: column; gap: 18px; }
 

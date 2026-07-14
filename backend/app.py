@@ -137,7 +137,7 @@ def articolo(q: Query):
             "article_heading": a.article_heading, "text": a.text,
             "in_force_from": a.in_force_from, "permalink": a.permalink,
             "updates": a.updates, "error": a.error,
-            "abrogato": a.abrogato, "versions": a.versions,
+            "abrogato": a.abrogato, "versions": a.versions, "vigenza": a.vigenza,
         }
         return {"ok": True, "mode": "article", "label": label,
                 "reference_found": True, "article": article}

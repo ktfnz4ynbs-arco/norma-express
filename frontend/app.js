@@ -337,6 +337,30 @@ function renderArticle(a) {
   const link = $("#art-link");
   if (a.permalink) { link.href = a.permalink; link.classList.remove("hidden"); }
   else link.classList.add("hidden");
+
+  renderVigenza(a);
+}
+
+/* Multivigenza: apre il testo dell'articolo a una data storica su Normattiva. */
+function renderVigenza(a) {
+  const box = $("#art-vigenza");
+  if (!box) return;
+  if (!a.permalink) { box.innerHTML = ""; return; }
+  const base = a.permalink.split("!vig=")[0];
+  const preset = a.vigenza || "";
+  box.innerHTML = `
+    <span class="vig-label">📅 Testo a una data (multivigenza):</span>
+    <input type="date" id="vig-date" class="vig-date" value="${esc(preset)}" max="${new Date().toISOString().slice(0,10)}" />
+    <button type="button" id="vig-go" class="vig-go">Apri versione storica →</button>`;
+  const openHist = () => {
+    const d = $("#vig-date").value;
+    if (d) window.open(base + "!vig=" + d, "_blank", "noopener");
+  };
+  $("#vig-go").addEventListener("click", openHist);
+  if (preset) {
+    box.insertAdjacentHTML("beforeend",
+      `<p class="vig-note">Nella tua ricerca hai indicato una data: il testo qui sopra è quello <strong>vigente oggi</strong>; apri la versione al ${esc(preset)} per il testo storico.</p>`);
+  }
 }
 
 function metaItem(label, val) {

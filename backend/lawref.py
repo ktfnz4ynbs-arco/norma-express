@@ -21,16 +21,23 @@ URN_TYPES = {
     "decreto legislativo": "stato:decreto.legislativo",
     "decreto-legge": "stato:decreto.legge",
     "dpr": "stato:decreto.del.presidente.della.repubblica",
+    "dpcm": "stato:decreto.del.presidente.del.consiglio.dei.ministri",
+    "legge costituzionale": "stato:legge.costituzionale",
     "regio decreto": "stato:regio.decreto",
     "costituzione": "stato:costituzione",
 }
 
-# Codici italiani -> (tipo, anno, numero) dell'atto istitutivo su Normattiva
+# Codici italiani -> (tipo, anno, numero, allegato) dell'atto istitutivo.
+# I grandi codici sono ALLEGATI numerati di Regi Decreti: senza il numero di
+# allegato l'articolo a numero basso risolve nel corpo del R.D. (es. art. 1 c.c.
+# darebbe l'articolo di approvazione invece di "Capacita' giuridica").
 CODES = {
-    "codice civile": ("regio decreto", 1942, 262),
-    "codice penale": ("regio decreto", 1930, 1398),
-    "codice di procedura civile": ("regio decreto", 1940, 1443),
-    "codice di procedura penale": ("dpr", 1988, 447),
+    "codice civile": ("regio decreto", 1942, 262, "2"),
+    "codice penale": ("regio decreto", 1930, 1398, "1"),
+    "codice di procedura civile": ("regio decreto", 1940, 1443, "1"),
+    "codice di procedura penale": ("dpr", 1988, 447, None),
+    "legge fallimentare": ("regio decreto", 1942, 267, "1"),
+    "codice della navigazione": ("regio decreto", 1942, 327, None),
 }
 
 # Alias testuali -> tipo canonico
@@ -47,6 +54,8 @@ TYPE_ALIASES = [
 CODE_ALIASES = [
     (r"\bcodice\s+di\s+procedura\s+civile\b|\bc\.?\s*p\.?\s*c\.?\b", "codice di procedura civile"),
     (r"\bcodice\s+di\s+procedura\s+penale\b|\bc\.?\s*p\.?\s*p\.?\b", "codice di procedura penale"),
+    (r"\bcodice\s+della\s+navigazione\b|\bcod\.?\s*nav\.?\b", "codice della navigazione"),
+    (r"\blegge\s+fallimentare\b|\bl\.?\s*fall\.?\b", "legge fallimentare"),
     (r"\bcodice\s+civile\b|\bc\.?\s*c\.?\b", "codice civile"),
     (r"\bcodice\s+penale\b|\bc\.?\s*p\.?\b", "codice penale"),
 ]
@@ -60,8 +69,10 @@ class LawRef:
     articolo: Optional[str]       # numero articolo come stringa (es. "2043", "2-bis")
     label: str = ""               # etichetta leggibile
     permalink_url: Optional[str] = None  # permalink Normattiva risolto (fallback)
+    allegato: Optional[str] = None       # allegato dei codici (c.c.=2, c.p.c.=1, ...)
+    vigenza: Optional[str] = None        # data multivigenza AAAA-MM-GG (!vig=)
 
-    def urn(self) -> Optional[str]:
+    def urn(self, vigenza: Optional[str] = None) -> Optional[str]:
         token = URN_TYPES.get(self.tipo)
         if not token:
             return None
@@ -71,16 +82,25 @@ class LawRef:
             if self.numero is None or self.anno is None:
                 return None
             base = f"urn:nir:{token}:{self.anno};{self.numero}"
+            if self.allegato:
+                base += f":{self.allegato}"
         if self.articolo:
             art = re.sub(r"[^0-9a-z]", "", self.articolo.lower())
             base += f"~art{art}"
+        vig = vigenza or self.vigenza
+        if vig:
+            base += f"!vig={vig}"
         return base
 
-    def permalink(self) -> Optional[str]:
-        u = self.urn()
+    def permalink(self, vigenza: Optional[str] = None) -> Optional[str]:
+        u = self.urn(vigenza)
         if u:
             return f"https://www.normattiva.it/uri-res/N2Ls?{u}"
         return self.permalink_url  # atto risolto per keyword con token URN atipico
+
+    def flag_allegato(self) -> str:
+        """Il flagTipoArticolo su Normattiva corrisponde al numero di allegato."""
+        return self.allegato or "0"
 
     def short(self) -> str:
         """Riferimento breve per costruire query per-articolo (es. 'legge 354/1975')."""
@@ -125,8 +145,9 @@ def parse(query: str) -> Optional[LawRef]:
     # 1) Codici (hanno atto fisso, ma serve comunque l'articolo)
     for pattern, code in CODE_ALIASES:
         if re.search(pattern, q):
-            tipo, anno, numero = CODES[code]
+            tipo, anno, numero, allegato = CODES[code]
             return LawRef(tipo=tipo, numero=numero, anno=anno, articolo=articolo,
+                          allegato=allegato, vigenza=_find_vigenza(q),
                           label=_label(code, None, None, articolo))
 
     # 2) Costituzione
@@ -143,8 +164,21 @@ def parse(query: str) -> Optional[LawRef]:
                 tipo = canonical
                 break
         return LawRef(tipo=tipo, numero=numero, anno=anno, articolo=articolo,
+                      vigenza=_find_vigenza(q),
                       label=_label(tipo, numero, anno, articolo))
 
+    return None
+
+
+def _find_vigenza(text: str) -> Optional[str]:
+    """Estrae una data di multivigenza dal testo: 'al 31/12/2022', 'vigente al 2015'."""
+    m = re.search(r"(?:vigente\s+al|al|alla\s+data\s+del|testo\s+al)\s+"
+                  r"(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})", text)
+    if m:
+        return f"{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}"
+    m = re.search(r"(?:vigente\s+al|nel|del)\s+((?:19|20)\d{2})\b", text)
+    if m:
+        return f"{m.group(1)}-12-31"  # anno -> fine anno
     return None
 
 
@@ -165,9 +199,19 @@ KNOWN_LAWS = [
     (r"testo unico edilizia", ("dpr", 380, 2001)),
     (r"testo unico bancario|\btub\b", ("decreto legislativo", 385, 1993)),
     (r"testo unico (della )?finanza|\btuf\b", ("decreto legislativo", 58, 1998)),
-    (r"legge fallimentare", ("regio decreto", 267, 1942)),
+    (r"legge fallimentare|\bl\.?\s*fall\.?\b", ("regio decreto", 267, 1942)),
+    (r"codice della crisi|crisi d'?impresa", ("decreto legislativo", 14, 2019)),
+    (r"codice (dei )?contratti pubblici|codice (degli )?appalti", ("decreto legislativo", 36, 2023)),
+    (r"codice delle assicurazioni", ("decreto legislativo", 209, 2005)),
+    (r"testo unico enti locali|\btuel\b", ("decreto legislativo", 267, 2000)),
+    (r"testo unico pubblico impiego|t\.?u\.? pubblico impiego", ("decreto legislativo", 165, 2001)),
+    (r"testo unico imposte sui redditi|\btuir\b", ("dpr", 917, 1986)),
+    (r"jobs act", ("decreto legislativo", 81, 2015)),
     (r"legge biagi", ("decreto legislativo", 276, 2003)),
+    (r"decreto 231|d\.?\s*lgs\.?\s*231", ("decreto legislativo", 231, 2001)),
+    (r"testo unico sicurezza (sul )?lavoro|d\.?\s*lgs\.?\s*81/2008", ("decreto legislativo", 81, 2008)),
     (r"codice del turismo", ("decreto legislativo", 79, 2011)),
+    (r"codice della navigazione", ("regio decreto", 327, 1942)),
     (r"gdpr|regolamento generale.*protezione dei dati", ("regolamento_ue", 679, 2016)),
 ]
 

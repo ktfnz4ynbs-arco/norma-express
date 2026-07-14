@@ -45,6 +45,18 @@ mostrato i risultati (progressive enhancement: prima i link, poi i riassunti).
 - Testo articoli **solo da Normattiva** (leggi/decreti; i codici funzionano via regio decreto).
 - Ricerca web con catena di fallback (vedi sotto).
 
+## Correttezza codici + multivigenza (da avvocati-e-mac/skill-legali, 2026-07-09)
+- **Codici = allegati numerati di R.D.**: `LawRef.allegato` (c.c.=2, c.p.c./c.p./l.fall.=1).
+  L'URN include `:{allegato}` e `_pick_article_link` filtra per `flagTipoArticolo={allegato}`
+  (0=corpo atto). SENZA questo, gli articoli a numero basso risolvono nel preambolo del R.D.
+  (bug storico: art.1 c.c. dava "approvazione del testo" invece di "Capacità giuridica").
+- **Multivigenza `!vig=AAAA-MM-GG`**: `LawRef.vigenza` (parsata da "al 6/3/2015", "vigente al
+  2022"). L'ESTRAZIONE resta il testo vigente; il frontend offre un controllo data
+  ("Testo a una data") che apre `permalink + !vig=data` su Normattiva (versione storica).
+- **Lookup esteso**: `KNOWN_LAWS` e `CODES` coprono cod. crisi 14/2019, contratti pubblici
+  36/2023, assicurazioni, TUEL, TUIR, pubblico impiego 165/2001, jobs act, 231/2001, 81/2008,
+  l.fall., cod. navigazione. `URN_TYPES` include dpcm e legge costituzionale.
+
 ## Come funziona Normattiva (`normattiva.py`)
 - URN: `urn:nir:stato:{tipo}:{anno};{numero}~art{N}` — funziona con **solo anno+numero**
   (non serve la data di promulgazione). Permalink: `https://www.normattiva.it/uri-res/N2Ls?<URN>`.

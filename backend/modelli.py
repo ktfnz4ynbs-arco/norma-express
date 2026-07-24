@@ -55,6 +55,7 @@ class Template:
     corpo: str
     match: list = field(default_factory=list)
     keywords: str = ""          # regex, cerca in label + query libera
+    universal: bool = False     # sempre proposto, qualunque norma sia stata trovata
 
 
 _BASE_FIELDS = [
@@ -73,6 +74,59 @@ _HEADER = (
 )
 
 CATALOGO = [
+    Template(
+        id="istanza_generica",
+        titolo="Istanza generica",
+        norma="Adattabile a qualunque norma cercata",
+        descrizione="Richiesta formale generica a un ente/soggetto, che riporta in automatico il riferimento alla norma appena consultata. Sempre disponibile, qualunque sia la ricerca.",
+        universal=True,
+        fields=_BASE_FIELDS + [
+            Field("riferimento_normativo", "Riferimento normativo (precompilato dalla ricerca)"),
+            Field("oggetto_istanza", "Cosa richiedi", type="textarea", required=True,
+                  placeholder="Descrivi in modo puntuale la richiesta"),
+            Field("motivazione", "Motivazione a sostegno (facoltativo)", type="textarea"),
+        ],
+        corpo=_HEADER +
+        "Oggetto: Istanza<<SE:riferimento_normativo>> ai sensi di {riferimento_normativo}<<FINESE>>\n\n"
+        "Il/La sottoscritto/a {mittente} chiede quanto segue:\n\n{oggetto_istanza}\n\n"
+        "<<SE:motivazione>>A sostegno della presente istanza si rappresenta quanto segue: "
+        "{motivazione}\n\n<<FINESE>>"
+        "Si resta in attesa di cortese riscontro.\n\nDistinti saluti.\n\n{mittente}",
+    ),
+    Template(
+        id="autocertificazione",
+        titolo="Autocertificazione (dichiarazione sostitutiva)",
+        norma="Artt. 46-47 D.P.R. 445/2000",
+        descrizione="Dichiarazione sostitutiva di certificazione/atto di notorietà, con le clausole di legge su responsabilità penale e controlli. Sempre disponibile.",
+        universal=True,
+        match=[Match("dpr", 445, 2000)],
+        keywords=r"autocertificazion|dichiarazione sostitutiv|atto di notoriet",
+        fields=[
+            Field("mittente", "Nome e cognome", required=True, placeholder="Mario Rossi"),
+            Field("nato_a", "Nato/a a", required=True, placeholder="Roma"),
+            Field("nato_il", "Il (data di nascita)", type="date", required=True),
+            Field("residente_a", "Residente a (indirizzo)", required=True, placeholder="Via Roma 1, 00100 Roma"),
+            Field("codice_fiscale", "Codice fiscale (facoltativo)"),
+            Field("destinatario", "Ente/ufficio destinatario (facoltativo)", placeholder="Comune di ..."),
+            Field("dichiarazione", "Cosa dichiari", type="textarea", required=True,
+                  placeholder="Es. di essere residente in ..., di non aver riportato condanne penali, di essere in possesso di ..."),
+            Field("luogo", "Luogo", required=True, placeholder="Roma"),
+            Field("data", "Data", type="date", required=True),
+        ],
+        corpo=
+        "DICHIARAZIONE SOSTITUTIVA DI CERTIFICAZIONE\n"
+        "(art. 46 D.P.R. 28 dicembre 2000, n. 445)\n\n"
+        "<<SE:destinatario>>Spett.le {destinatario}\n\n<<FINESE>>"
+        "Il/La sottoscritto/a {mittente}, nato/a a {nato_a} il {nato_il}, residente a "
+        "{residente_a}<<SE:codice_fiscale>>, codice fiscale {codice_fiscale}<<FINESE>>,\n\n"
+        "consapevole delle sanzioni penali previste dall'art. 76 del D.P.R. 445/2000 per le "
+        "ipotesi di falsita' in atti e dichiarazioni mendaci, e della decadenza dai benefici "
+        "eventualmente conseguenti al provvedimento emanato sulla base di una dichiarazione "
+        "non veritiera (art. 75 D.P.R. 445/2000),\n\nDICHIARA\n\n{dichiarazione}\n\n"
+        "Dichiara inoltre di essere informato/a che, ai sensi dell'art. 71 D.P.R. 445/2000, "
+        "l'amministrazione procedente puo' effettuare controlli sulla veridicita' di quanto "
+        "sopra dichiarato.\n\n{luogo}, {data}\n\nIl/La dichiarante\n{mittente}",
+    ),
     Template(
         id="diffida_adempiere",
         titolo="Diffida ad adempiere",
@@ -333,11 +387,14 @@ def _score(t: Template, ref, text: str) -> int:
             score += 7
     if t.keywords and re.search(t.keywords, text, re.I):
         score += 3
+    if t.universal:
+        score = max(score, 1)  # sempre proposto, ma dopo i match specifici
     return score
 
 
-def match_templates(ref, label: str, extra: str = "", limit: int = 6) -> list:
-    """Ritorna i modelli pertinenti alla norma/richiesta corrente, piu' rilevanti prima."""
+def match_templates(ref, label: str, extra: str = "", limit: int = 8) -> list:
+    """Ritorna i modelli pertinenti alla norma/richiesta corrente, piu' rilevanti prima
+    (i modelli 'universali' come istanza generica e autocertificazione compaiono sempre)."""
     text = f"{label} {extra}".strip()
     scored = [(t, _score(t, ref, text)) for t in CATALOGO]
     scored = [(t, s) for t, s in scored if s > 0]

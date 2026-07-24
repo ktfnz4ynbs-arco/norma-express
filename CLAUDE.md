@@ -141,6 +141,12 @@ recesso consumatore, accesso dati GDPR, opposizione a decreto ingiuntivo…), ci
 - `fields` + `corpo` con placeholder `{campo}` e paragrafi opzionali
   `<<SE:campo>>...<<FINESE>>` attivati solo se il campo è compilato.
 
+**Modelli universali (2026-07-24, richiesta utente):** `Template.universal=True` fa sì che
+"Istanza generica" (riferimento normativo precompilato dalla ricerca) e "Autocertificazione"
+(artt. 46-47 D.P.R. 445/2000) compaiano **sempre**, qualunque sia la norma cercata — non solo
+i modelli agganciati a un articolo specifico. `_score()` forza `score = max(score, 1)` per
+questi, cosi' finiscono comunque in coda ai match piu' pertinenti (`match_templates`, limit 8).
+
 API: `POST /api/modelli` (propone i modelli pertinenti alla norma corrente + fac-simile reali
 trovati sul web via `search.py::facsimile`, keyless, stesso `BLOCK` niente-paywall — qui i
 PDF/DOC NON vengono scartati perché sono il contenuto utile) e `POST /api/modelli/compila`

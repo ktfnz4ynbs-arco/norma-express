@@ -379,7 +379,9 @@ function renderModelloForm(t) {
   const fieldsHtml = t.fields.map((f) => {
     const id = `mf-${f.name}`;
     const req = f.required ? " *" : "";
-    const val = (f.type === "date" && f.name === "data") ? today : (f.default || "");
+    const val = (f.type === "date" && f.name === "data") ? today
+      : (f.name === "riferimento_normativo") ? currentLabel
+      : (f.default || "");
     const inputType = f.type === "number" ? "number" : f.type === "date" ? "date" : "text";
     const control = f.type === "textarea"
       ? `<textarea id="${id}" name="${esc(f.name)}" rows="3" placeholder="${esc(f.placeholder)}">${esc(val)}</textarea>`

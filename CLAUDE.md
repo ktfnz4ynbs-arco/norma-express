@@ -19,12 +19,15 @@ restituisce tre sezioni:
 
 ```
 backend/
-  app.py         # FastAPI: /api/ricerca, /api/riassunti (+ /api/health) e serve il frontend
-  lawref.py      # parsing riferimento normativo (testo libero o campi) → URN Normattiva
-  normattiva.py  # recupero testo articolo da Normattiva (+ flag abrogato, n. versioni)
-  search.py      # ricerca web: Brave(opz.) → Startpage(keyless) → DuckDuckGo → deep-link
-  enrich.py      # riassunti ESTRATTIVI dalle fonti + Brocardi (Spiegazione/Massime)
-frontend/        # index.html, style.css, app.js  (montato su /assets, index su /)
+  app.py              # FastAPI: /api/ricerca, /api/riassunti (+ /api/health) e serve il frontend
+  lawref.py           # parsing riferimento normativo (testo libero o campi) → URN Normattiva
+  normattiva.py       # recupero testo articolo da Normattiva (+ flag abrogato, n. versioni)
+  search.py           # ricerca web: Brave(opz.) → Startpage(keyless) → DuckDuckGo → deep-link
+  enrich.py           # riassunti ESTRATTIVI dalle fonti + Brocardi (Spiegazione/Massime)
+  modelli.py          # catalogo modelli di atti (document assembly a regole, no AI)
+  costituzione_repo.py # indice Costituzione da dataset open source (Parte/Titolo/Sezione)
+  cassazione_db.py    # giurisprudenza penale recente da dataset open source (Cassazione)
+frontend/             # index.html, style.css, app.js  (montato su /assets, index su /)
 ```
 
 ## Riassunti dalle fonti (`enrich.py` + `/api/riassunti`)
@@ -124,6 +127,55 @@ resta senza riassunto né snippet, il frontend lo rimuove del tutto.
 
 Se le liste web sono vuote il frontend mostra un empty-state + i deep-link. È il comportamento atteso.
 
+## Modelli di atti che si adattano alla norma (`modelli.py`, 2026-07-24)
+**Vincolo utente invariato: niente LLM.** "Modelli che si adattano al prompt" è stato
+implementato come **document assembly a regole** (stesso principio di
+[Docassemble](https://github.com/jhpyle/docassemble), reimplementato qui in forma minima
+e autonoma, nessuna dipendenza aggiunta): un catalogo `CATALOGO` di atti tipo (diffida,
+messa in mora, disdetta locazione, dimissioni, contestazione disciplinare, accesso atti,
+recesso consumatore, accesso dati GDPR, opposizione a decreto ingiuntivo…), ciascuno con
+- `match`: legame alla norma (`LawRef` tipo/numero/anno/articoli) — **l'articolo esatto pesa
+  molto di più della sola "stessa legge"**, altrimenti sui codici (c.c./c.p./c.p.c., che
+  coprono migliaia di articoli) qualunque articolo richiamerebbe modelli non pertinenti;
+- `keywords`: match libero indipendente (ricerche senza articolo preciso);
+- `fields` + `corpo` con placeholder `{campo}` e paragrafi opzionali
+  `<<SE:campo>>...<<FINESE>>` attivati solo se il campo è compilato.
+
+API: `POST /api/modelli` (propone i modelli pertinenti alla norma corrente + fac-simile reali
+trovati sul web via `search.py::facsimile`, keyless, stesso `BLOCK` niente-paywall — qui i
+PDF/DOC NON vengono scartati perché sono il contenuto utile) e `POST /api/modelli/compila`
+(compila il testo coi valori inseriti dall'utente, nessuna generazione: solo sostituzione
+stringhe + segnala i campi obbligatori mancanti). Frontend: card "Modelli che si adattano
+alla norma" con chip dei modelli trovati → form dinamico dai `fields` → textarea col
+risultato, copia/scarica .txt. **Sempre con disclaimer**: sono bozze da far controllare a
+un professionista, non atti pronti per il deposito.
+
+## Dataset esterni open source integrati (2026-07-24)
+Stesso principio delle altre fonti: **estrattivo, nessuna generazione**, sempre con link
+alla fonte originale. Fetch via `requests` a raw.githubusercontent.com, nessuna nuova
+dipendenza (niente pandas/pyarrow: dove i dataset usano Parquet — es. `massime.parquet` di
+costituzione-italiana — non li leggiamo, per restare leggeri; si usa solo il Markdown).
+- **`costituzione_repo.py`** — [dataciviclab/costituzione-italiana](https://github.com/dataciviclab/costituzione-italiana)
+  (testo CC BY-SA 3.0 da Wikisource, codice MIT): parsa `Costituzione.md` (headings
+  `#`=Parte, `## Titolo`, `### Sezione`, `## Art. N`) per costruire l'**indice della
+  Costituzione** (139 articoli, le disposizioni transitorie/finali con numerazione romana
+  restano fuori: non hanno un URN `art N` raggiungibile). Usato SOLO per l'albero di
+  navigazione in `/api/articolo` (`mode:"index"`) quando `ref.tipo == "costituzione"` — il
+  **testo dell'articolo resta sempre quello di Normattiva** (vincolo invariato). Risolve
+  anche il TODO sotto: la Costituzione è ora anche nel form strutturato (`<select id="tipo">`),
+  con numero/anno nascosti via `syncTipoCostituzione()` in `app.js` perché non pertinenti.
+- **`cassazione_db.py`** — [Synthos-Logic/cassazione-penale-db](https://github.com/Synthos-Logic/cassazione-penale-db)
+  (provvedimenti = atti ufficiali dello Stato, non soggetti a copyright; schede CC BY 4.0;
+  aggiornato settimanalmente via GitHub Action). Legge `SEGNALATE/INDICE.md` (elenco per
+  materia con citazione + link scheda), fa scoring per parole chiave sulla query, poi
+  scarica la scheda markdown scelta ed estrae la **"Massima ufficiale (Oggetto)"** testuale
+  + link al **PDF autentico**. Gira **solo per ricerche riconducibili alla materia penale**
+  (`_PENALE_RE`) per evitare abbinamenti fuori contesto: dataset curato e non esaustivo
+  (copre le sole pronunce "segnalate" dal 2023), va trattato come integrazione best-effort
+  in `/api/fonti` (`cassazione_penale`), non come banca dati completa. Frontend: card
+  verde-web dentro "Interpretazione e giurisprudenza", stile massime ma colore diverso
+  (`.massima-penale`) per distinguerla dalle massime Brocardi.
+
 ## Frontend / design
 Estetica "studio legale premium": hero gradiente **navy** con bagliore **oro**, icona bilancia,
 wordmark serif **Fraunces** + body **Inter**, search card che fluttua sull'hero, card risultati
@@ -148,6 +200,7 @@ Tipi: `legge`, `decreto legislativo`, `decreto-legge`, `dpr`, `regio decreto`.
 Riconosce anche i codici in testo libero (`art 2043 codice civile`, `art 18 c.p.`).
 
 ## TODO / possibili estensioni
-- Aggiungere la **Costituzione** nel form strutturato (il parsing la già supporta in testo libero).
+- ~~Aggiungere la Costituzione nel form strutturato~~ fatto 2026-07-24 (v. sopra).
 - Cache dei risultati Normattiva.
 - Ricerca per rubrica / per parola chiave nell'atto.
+- Ampliare `modelli.py::CATALOGO` con altri atti tipo se richiesti dall'utente.

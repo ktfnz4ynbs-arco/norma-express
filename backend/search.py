@@ -133,7 +133,7 @@ def _unwrap(url: str) -> str:
     return url
 
 
-def _ddg(query: str, n: int) -> list:
+def _ddg(query: str, n: int, drop_docs: bool = True) -> list:
     try:
         r = requests.post(DDG, data={"q": query}, headers={"User-Agent": UA}, timeout=TIMEOUT)
         r.raise_for_status()
@@ -162,7 +162,7 @@ def _ddg(query: str, n: int) -> list:
         seen.add(key)
         hits.append(Hit(title=title, url=url, snippet=snippet, source=dom,
                         trusted=dom in TRUSTED))
-    return _rank(hits, n)
+    return _rank(hits, n, drop_docs)
 
 
 # --------------------------------------------------------- Startpage (keyless)
@@ -293,6 +293,19 @@ def regionale(query: str) -> dict:
         {"name": "Normattiva — Motore federato regionale",
          "url": "https://www.normattiva.it/legislazioneRegionale"},
     ]}
+
+
+# ============================================== FAC-SIMILE / MODULISTICA
+def facsimile(label: str, extra: str = "", n: int = 6) -> list:
+    """Fac-simile/modulistica reali trovati sul web (fonti gratuite, no
+    paywall: stesso BLOCK delle altre ricerche). A differenza delle altre
+    ricerche qui i documenti (PDF/DOC) sono il contenuto utile, quindi non
+    vengono scartati."""
+    q = f"{label} {extra} fac simile modello atto gratis".strip()
+    hits = _startpage(q, n * 2, drop_docs=False)
+    if not hits:
+        hits = _ddg(q, n * 2, drop_docs=False)
+    return [asdict(h) for h in hits[:n]]
 
 
 def normattiva_url(query: str) -> str:

@@ -79,6 +79,16 @@ formFree.addEventListener("submit", (e) => {
   runSearch({ query: q });
 });
 
+// La Costituzione non ha numero/anno di atto (URN fisso): nasconde quei
+// campi e non li richiede nella validazione.
+function syncTipoCostituzione() {
+  const isCost = $("#tipo").value === "costituzione";
+  $("#field-numero").classList.toggle("hidden", isCost);
+  $("#field-anno").classList.toggle("hidden", isCost);
+}
+$("#tipo").addEventListener("change", syncTipoCostituzione);
+syncTipoCostituzione();
+
 formStruct.addEventListener("submit", (e) => {
   e.preventDefault();
   const payload = {
@@ -87,7 +97,7 @@ formStruct.addEventListener("submit", (e) => {
     anno: $("#anno").value.trim(),
     articolo: $("#art").value.trim(),
   };
-  if (!payload.numero || !payload.anno) {
+  if (payload.tipo !== "costituzione" && (!payload.numero || !payload.anno)) {
     showStatus('<span class="error-box">Inserisci almeno numero e anno dell\'atto.</span>', true);
     return;
   }
@@ -139,8 +149,15 @@ async function runSearch(payload) {
       '<div class="digest"><div class="digest-unified provisional"><span class="spinner" aria-hidden="true"></span>Sto sintetizzando interpretazione e giurisprudenza…</div>' +
       '<p class="verify-cap" hidden>Ogni passaggio riporta la fonte <strong>[n]</strong>: clicca per verificarlo.</p></div>';
     $("#massime-body").innerHTML = "";
+    $("#penale-body").innerHTML = "";
     $("#fonti-body").innerHTML = '<p class="empty-note loading-note"><span class="spinner" aria-hidden="true"></span>Cerco le fonti gratuite…</p>';
     $("#banche-links").innerHTML = "";
+    $("#modelli-list").innerHTML = '<p class="empty-note loading-note"><span class="spinner" aria-hidden="true"></span>Cerco modelli adatti alla norma…</p>';
+    $("#modello-form-wrap").classList.add("hidden");
+    $("#modello-form-wrap").innerHTML = "";
+    $("#modello-output").classList.add("hidden");
+    $("#modello-output").innerHTML = "";
+    $("#facsimile-body").innerHTML = "";
     $("#domanda-risposta").innerHTML = "";
     $("#disclaimer").textContent = "";
     statusEl.classList.add("hidden");
@@ -159,11 +176,15 @@ async function runSearch(payload) {
     const combined = dedupeByUrl([...interp, ...giuri]);
     renderFonti(combined);
     renderBanche(fonti.banche_dati);
+    renderPenale(fonti.cassazione_penale);
     $("#disclaimer").textContent = fonti.disclaimer ||
       "Sintesi e fonti provengono da ricerche web su fonti gratuite e vanno verificate. Il testo dell'articolo è tratto da Normattiva. Non costituisce parere legale.";
 
     // FASE 3 — la sintesi unica (interpretazione + giurisprudenza)
     loadSintesi(interp.map((h) => h.url), giuri.map((h) => h.url));
+
+    // FASE 4 — modelli di atti che si adattano alla norma (non bloccante)
+    loadModelli(payload);
   } catch (err) {
     showStatus('<span class="error-box">Impossibile contattare il server. Riprova.</span>', true);
   } finally {
@@ -279,6 +300,21 @@ function fillSintesi(sintesi, hasSources, brocardi) {
   }
 }
 
+/* Giurisprudenza penale recente segnalata (dataset open source
+   Synthos-Logic/cassazione-penale-db, aggiornato settimanalmente
+   dall'Ufficio del Massimario): best-effort, solo per ricerche penali. */
+function renderPenale(hits) {
+  const box = $("#penale-body");
+  if (!hits || !hits.length) { box.innerHTML = ""; return; }
+  const blocks = hits.map((h) => `
+    <div class="massima massima-penale">
+      <span class="massima-ref">${esc(h.citazione)}${h.materia ? ` · ${esc(h.materia)}` : ""}</span>
+      <p>${esc(h.massima)}</p>
+      <a class="sum-link" href="${esc(h.url_pdf || h.url_scheda)}" target="_blank" rel="noopener">PDF autentico della pronuncia →</a>
+    </div>`).join("");
+  box.innerHTML = `<p class="block-title massime-title">Giurisprudenza penale recente segnalata (Cassazione)</p>${blocks}`;
+}
+
 function renderFonti(hits) {
   const box = $("#fonti-body");
   sourceIndex = buildIndex(hits);
@@ -298,6 +334,138 @@ function renderFonti(hits) {
     </li>`;
   }).join("");
   box.innerHTML = `<ul class="fonti-list numbered">${items}</ul>`;
+}
+
+/* ---- Modelli di atti che si adattano alla norma (nessuna AI: motore a
+   regole in modelli.py, ispirato al document-assembly open source
+   Docassemble) + fac-simile reali trovati sul web ---- */
+let modelliCache = new Map();
+
+async function loadModelli(payload) {
+  try {
+    const res = await fetch("/api/modelli", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const d = await res.json();
+    renderModelli((d.ok && d.templates) || []);
+    renderFacsimile((d.ok && d.facsimile_web) || []);
+  } catch (err) {
+    renderModelli([]);
+    renderFacsimile([]);
+  }
+}
+
+function renderModelli(templates) {
+  const box = $("#modelli-list");
+  modelliCache = new Map(templates.map((t) => [t.id, t]));
+  if (!templates.length) {
+    box.innerHTML = '<p class="empty-note">Nessun modello del catalogo interno è pertinente a questa norma. Guarda i fac-simile trovati sul web qui sotto, se presenti.</p>';
+    return;
+  }
+  box.innerHTML = `<div class="voci modelli-voci">${templates.map((t) =>
+    `<button type="button" class="voce modello-voce" data-id="${esc(t.id)}" title="${esc(t.descrizione)}">${esc(t.titolo)}</button>`
+  ).join("")}</div>`;
+  box.querySelectorAll(".modello-voce").forEach((b) => {
+    b.addEventListener("click", () => renderModelloForm(modelliCache.get(b.dataset.id)));
+  });
+}
+
+function renderModelloForm(t) {
+  if (!t) return;
+  const wrap = $("#modello-form-wrap");
+  const today = new Date().toISOString().slice(0, 10);
+  const fieldsHtml = t.fields.map((f) => {
+    const id = `mf-${f.name}`;
+    const req = f.required ? " *" : "";
+    const val = (f.type === "date" && f.name === "data") ? today : (f.default || "");
+    const inputType = f.type === "number" ? "number" : f.type === "date" ? "date" : "text";
+    const control = f.type === "textarea"
+      ? `<textarea id="${id}" name="${esc(f.name)}" rows="3" placeholder="${esc(f.placeholder)}">${esc(val)}</textarea>`
+      : `<input id="${id}" name="${esc(f.name)}" type="${inputType}" placeholder="${esc(f.placeholder)}" value="${esc(val)}" />`;
+    const wideClass = f.type === "textarea" ? " mf-field-wide" : "";
+    return `<div class="field mf-field${wideClass}"><label for="${id}">${esc(f.label)}${req}</label>${control}</div>`;
+  }).join("");
+  wrap.innerHTML = `
+    <div class="modello-form-head">
+      <p class="block-title">${esc(t.titolo)}</p>
+      <span class="modello-norma">${esc(t.norma)}</span>
+    </div>
+    <p class="modello-desc">${esc(t.descrizione)}</p>
+    <form id="form-modello" class="mf-grid" autocomplete="off">
+      ${fieldsHtml}
+      <button type="submit" class="go full">Genera bozza</button>
+    </form>`;
+  wrap.classList.remove("hidden");
+  $("#modello-output").classList.add("hidden");
+  $("#modello-output").innerHTML = "";
+  $("#form-modello").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const valori = {};
+    t.fields.forEach((f) => { valori[f.name] = $(`#mf-${f.name}`).value.trim(); });
+    compilaModello(t.id, valori);
+  });
+  wrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function compilaModello(templateId, valori) {
+  const out = $("#modello-output");
+  out.classList.remove("hidden");
+  out.innerHTML = '<p class="empty-note loading-note"><span class="spinner" aria-hidden="true"></span>Compilo la bozza…</p>';
+  try {
+    const res = await fetch("/api/modelli/compila", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ template_id: templateId, valori }),
+    });
+    const d = await res.json();
+    if (!d.ok) {
+      out.innerHTML = `<p class="empty-note">${esc(d.error || "Impossibile compilare il modello.")}</p>`;
+      return;
+    }
+    const warn = (d.campi_mancanti && d.campi_mancanti.length)
+      ? `<p class="modello-warn">Campi non compilati (segnati tra parentesi quadre nel testo): ${d.campi_mancanti.map(esc).join(", ")}</p>`
+      : "";
+    out.innerHTML = `
+      ${warn}
+      <textarea id="modello-testo" class="modello-testo" rows="14" readonly>${esc(d.testo)}</textarea>
+      <div class="modello-actions">
+        <button type="button" class="go" id="modello-copia">Copia negli appunti</button>
+        <button type="button" class="go" id="modello-scarica">Scarica .txt</button>
+      </div>
+      <p class="modello-caveat">Bozza compilata dai dati inseriti (nessuna AI): va sempre controllata da un professionista prima dell'uso.</p>`;
+    $("#modello-copia").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(d.testo);
+        const btn = $("#modello-copia");
+        btn.textContent = "Copiato ✓";
+        setTimeout(() => { btn.textContent = "Copia negli appunti"; }, 1800);
+      } catch (err) { /* clipboard non disponibile: selezione manuale */ }
+    });
+    $("#modello-scarica").addEventListener("click", () => {
+      const blob = new Blob([d.testo], { type: "text/plain;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${templateId}.txt`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+    out.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (err) {
+    out.innerHTML = '<p class="empty-note">Impossibile contattare il server. Riprova.</p>';
+  }
+}
+
+function renderFacsimile(hits) {
+  const box = $("#facsimile-body");
+  if (!hits || !hits.length) { box.innerHTML = ""; return; }
+  const items = hits.map((h) => `
+    <li>
+      <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
+      <span class="fonte-dom">${esc(h.source)}</span>
+    </li>`).join("");
+  box.innerHTML = `<p class="block-title modelli-web-title">Fac-simile trovati sul web</p><ul class="fonti-list">${items}</ul>`;
 }
 
 function renderArticle(a) {

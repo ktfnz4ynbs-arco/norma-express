@@ -62,13 +62,14 @@
                 <option value="decreto-legge">Decreto-legge (D.L.)</option>
                 <option value="dpr">D.P.R.</option>
                 <option value="regio decreto">Regio decreto</option>
+                <option value="costituzione">Costituzione</option>
               </select>
             </div>
-            <div class="field">
+            <div class="field" id="field-numero">
               <label for="numero">Numero</label>
               <input id="numero" name="numero" inputmode="numeric" placeholder="241" />
             </div>
-            <div class="field">
+            <div class="field" id="field-anno">
               <label for="anno">Anno</label>
               <input id="anno" name="anno" inputmode="numeric" placeholder="1990" />
             </div>
@@ -195,6 +196,7 @@
         </header>
         <div id="sintesi-body"></div>
         <div id="massime-body"></div>
+        <div id="penale-body"></div>
       </article>
 
       <!-- Fonti consultabili -->
@@ -212,6 +214,24 @@
           <p class="banche-label">Banche dati ufficiali</p>
           <div id="banche-links" class="banche-links"></div>
         </div>
+      </article>
+
+      <!-- Modelli di atti che si adattano alla norma -->
+      <article class="card" id="card-modelli">
+        <header class="card-head">
+          <span class="card-ic ic-modelli" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M8 8h8M8 12h8M8 16h4"/></svg>
+          </span>
+          <div class="card-head-txt">
+            <span class="badge badge-web">Bozza · da verificare</span>
+            <h2>Modelli che si adattano alla norma</h2>
+          </div>
+        </header>
+        <p class="modelli-hint">In base all'articolo cercato, questi atti tipo si compilano con i tuoi dati (nessuna AI: sostituzione a regole, come una bozza guidata). Sotto, anche fac-simile reali trovati sul web.</p>
+        <div id="modelli-list"></div>
+        <div id="modello-form-wrap" class="modello-form-wrap hidden"></div>
+        <div id="modello-output" class="modello-output hidden"></div>
+        <div id="facsimile-body"></div>
       </article>
 
       <!-- Approfondimento: domande -->

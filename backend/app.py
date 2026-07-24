@@ -21,8 +21,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import cassazione_db
+import costituzione_repo
 import enrich
 import lawref
+import modelli
 import search
 from normattiva import fetch_article, fetch_index, resolve_law
 
@@ -51,6 +54,11 @@ class EnrichReq(BaseModel):
 class DomandaReq(BaseModel):
     query: str = ""      # contesto: etichetta articolo (es. "Art. 2043 c.c.")
     domanda: str = ""
+
+
+class CompilaReq(BaseModel):
+    template_id: str = ""
+    valori: dict = {}
 
 
 @app.get("/api/health")
@@ -145,6 +153,19 @@ def articolo(q: Query):
     # 2) Legge senza articolo, o parola chiave -> INDICE / voci della legge
     law = ref or resolve_law(q.query or label)
     if law:
+        if law.tipo == "costituzione":
+            # indice da dataset open source (dataciviclab/costituzione-italiana):
+            # Normattiva non espone per la Costituzione lo stesso albero delle
+            # leggi ordinarie. Il testo dell'articolo resta comunque sempre
+            # quello di Normattiva (invariato: vedi fetch_article sopra).
+            ci = costituzione_repo.index()
+            if ci["ok"]:
+                title = "Costituzione della Repubblica Italiana"
+                return {"ok": True, "mode": "index", "label": title,
+                        "reference_found": True,
+                        "index": {"ok": True, "act_title": title, "label": title,
+                                  "permalink": law.permalink(), "groups": ci["groups"],
+                                  "total": ci["total"], "error": ""}}
         idx = fetch_index(law)
         if idx.ok:
             return {"ok": True, "mode": "index", "label": idx.label,
@@ -162,21 +183,56 @@ def fonti(q: Query):
     if not label:
         return {"ok": False, "error": "Inserisci un articolo di legge o una richiesta."}
     free_terms = q.query or ""
-    with ThreadPoolExecutor(max_workers=2) as ex:
+    with ThreadPoolExecutor(max_workers=3) as ex:
         f_int = ex.submit(search.interpretazione, label, free_terms)
         f_giu = ex.submit(search.giurisprudenza, label, free_terms)
+        f_pen = ex.submit(cassazione_db.giurisprudenza_penale, label, free_terms)
         interpretazioni = f_int.result()
         giurisprudenza = f_giu.result()
+        cassazione_penale = f_pen.result()
     return {
         "ok": True, "label": label,
         "search_provider": search.provider_status(),
         "interpretazioni": interpretazioni,
         "giurisprudenza": giurisprudenza,
+        "cassazione_penale": cassazione_penale,
         "banche_dati": search.deep_links(label),
         "disclaimer": "Interpretazioni e giurisprudenza provengono da ricerche web su fonti "
                       "gratuite e vanno verificate. Il testo dell'articolo e' tratto da "
                       "Normattiva. Questo strumento non costituisce parere legale.",
     }
+
+
+@app.post("/api/modelli")
+def modelli_ep(q: Query):
+    """Modelli di atti che si adattano alla norma cercata: propone (a) atti
+    tipo del catalogo interno pertinenti alla norma/parole chiave (motore a
+    regole, nessuna AI) con i campi da compilare, e (b) fac-simile reali
+    trovati sul web su fonti gratuite."""
+    ref, label = _resolve_ref(q)
+    if not label:
+        return {"ok": False, "error": "Inserisci un articolo di legge o una richiesta."}
+    free_terms = q.query or ""
+    templates = modelli.match_templates(ref, label, free_terms)
+    web = search.facsimile(label, free_terms)
+    return {
+        "ok": True, "label": label,
+        "templates": templates,
+        "facsimile_web": web,
+        "disclaimer": "I modelli sono bozze compilate con i dati inseriti: vanno "
+                      "sempre controllati da un professionista prima dell'uso e "
+                      "non costituiscono parere legale ne' atti pronti per il "
+                      "deposito.",
+    }
+
+
+@app.post("/api/modelli/compila")
+def modelli_compila(req: CompilaReq):
+    t = modelli.get_template(req.template_id)
+    if not t:
+        return {"ok": False, "error": "Modello non trovato."}
+    out = modelli.render(t, req.valori or {})
+    return {"ok": True, "titolo": t.titolo, "norma": t.norma, **out}
 
 
 @app.post("/api/istituzionali")

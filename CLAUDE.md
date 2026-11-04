@@ -91,6 +91,8 @@ e' verificabile in modo deterministico.
 ```bash
 .venv/bin/python backend/test_banche.py     # oppure: python3 -m pytest backend/test_banche.py -q
 ```
+Girano anche in CI (`.github/workflows/test.yml`, su ogni push e PR), insieme a un
+`import app` che prende gli errori di sintassi che romperebbero il deploy.
 ⚠️ I **domini giuridici e i motori di ricerca sono bloccati** nell'ambiente di sviluppo
 Claude Code (proxy: 403 su CONNECT). Qui i risultati sono sempre vuoti **per progetto**:
 la resa reale si verifica solo sul deploy Railway o da una macchina con rete libera.

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -162,20 +163,60 @@ def fonti(q: Query):
     if not label:
         return {"ok": False, "error": "Inserisci un articolo di legge o una richiesta."}
     free_terms = q.query or ""
-    with ThreadPoolExecutor(max_workers=2) as ex:
+    with ThreadPoolExecutor(max_workers=3) as ex:
         f_int = ex.submit(search.interpretazione, label, free_terms)
         f_giu = ex.submit(search.giurisprudenza, label, free_terms)
+        f_ban = ex.submit(search.banche_dati, label, free_terms)
         interpretazioni = f_int.result()
         giurisprudenza = f_giu.result()
+        banche = f_ban.result()
     return {
         "ok": True, "label": label,
         "search_provider": search.provider_status(),
         "interpretazioni": interpretazioni,
         "giurisprudenza": giurisprudenza,
+        # Blocchi per corte: ogni banca dati e' interrogata con una ricerca
+        # ristretta al suo dominio, cosi' il risultato e' attribuibile a chi
+        # l'ha emesso invece di dipendere da una ricerca generica.
+        "banche_dati_risultati": banche,
         "banche_dati": search.deep_links(label),
+        # Contesto a parte (vedi /api/lavori). Qui si dice solo SE conviene
+        # aprirlo e perche': il frontend lo richiama quando "motivi" non e' vuoto.
+        "genesi": {"motivi": search.motivi_genesi(
+            label, free_terms, anno_corrente=date.today().year)},
         "disclaimer": "Interpretazioni e giurisprudenza provengono da ricerche web su fonti "
                       "gratuite e vanno verificate. Il testo dell'articolo e' tratto da "
                       "Normattiva. Questo strumento non costituisce parere legale.",
+    }
+
+
+@app.post("/api/lavori")
+def lavori(q: Query):
+    """CONTESTO SEPARATO: genesi della norma, fase per fase.
+
+    Non si apre da solo ad ogni ricerca: il frontend lo richiama quando
+    `/api/fonti` segnala dei `genesi.motivi` (domanda sulla ratio, confronto
+    con la disciplina previgente, norma recente o stratificata), oppure quando
+    l'utente lo chiede. Le fasi sono distinte - disegno di legge, lavori
+    preparatori, emendamenti, legge approvata - perche' un giurista cerca
+    quasi sempre UNA di quelle, non il mucchio indistinto.
+    """
+    ref, label = _resolve_ref(q)
+    if not label:
+        return {"ok": False, "error": "Inserisci un articolo di legge o una richiesta."}
+    free_terms = q.query or ""
+    fasi = search.iter_parlamentare(label, free_terms)
+    return {
+        "ok": True, "label": label,
+        "search_provider": search.provider_status(),
+        "fasi": fasi,
+        "portali": list(search.PORTALI_ITER),
+        "motivi": search.motivi_genesi(label, free_terms,
+                                       anno_corrente=date.today().year),
+        "disclaimer": "Atti parlamentari da ricerca su camera.it, senato.it, "
+                      "Gazzetta Ufficiale e Normattiva. I lavori preparatori "
+                      "aiutano a ricostruire la ratio, ma non sono fonte del "
+                      "diritto: fa testo la legge pubblicata.",
     }
 
 

@@ -39,6 +39,62 @@ mostrato i risultati (progressive enhancement: prima i link, poi i riassunti).
 - Frasi: proteggere le abbreviazioni giuridiche (art., Cass., n., …) prima dello split.
 - Aptus-style nel risultato articolo: `abrogato` (badge rosso) e `versions` (multivigenza).
 
+## Banche dati interrogate per dominio (2026-11-04)
+Prima la giurisprudenza veniva da **una sola ricerca generica**: che comparissero
+Cassazione o Consulta era questione di fortuna, `TRUSTED` si limitava a riordinare cio'
+che il motore aveva gia' restituito. E i deep-link a Cassazione/Consulta **buttavano via
+la query**, scaricando sull'utente il compito di ridigitare tutto in un form vuoto.
+
+- `search.BANCHE` + `banche_dati(label, extra)`: ogni fonte (Cassazione: italgiure +
+  cortedicassazione · Consulta: cortecostituzionale + giurcost · Gazzetta Ufficiale ·
+  Brocardi) e' interrogata con una ricerca **ristretta al suo dominio** (`site:`), in
+  parallelo. Risultato: blocchi **attribuibili** a chi li ha emessi. Esposti in
+  `/api/fonti` come `banche_dati_risultati` (le chiavi vecchie restano intatte).
+- **Nessuno scraping dei portali**: si passa sempre dai provider gia' in uso, che reggono
+  i blocchi anti-bot molto meglio di un client nostro verso siti (Italgiure in primis)
+  notoriamente ostili. Il filtro per dominio si applica comunque ai risultati, perche'
+  l'operatore `site:` non e' onorato allo stesso modo da tutti i motori.
+- ⚠️ **Trappola**: i provider deduplicavano **per dominio** → una ricerca `site:` avrebbe
+  restituito **un solo risultato**. Aggiunto `dedupe="url"` a `_brave`/`_ddg`/`_startpage`
+  e a `web_search`. Non rimuoverlo.
+- `deep_links()` ora include, per ogni banca dati, un link che **porta con se' la query**
+  (motore + operatore `site:`, forma di URL stabile) oltre al portale ufficiale.
+- Un blocco **senza risultati non sparisce**: resta coi suoi link, cosi' si vede che la
+  fonte e' stata interrogata e non dimenticata.
+
+## Genesi della norma: contesto separato richiamato quando serve (2026-11-04)
+Richiesta utente: distinguere **disegno di legge · lavori preparatori · emendamenti ·
+legge approvata**, in un contesto a parte che si apra quando l'argomento lo merita
+(ratio della norma, differenze con la disciplina previgente, applicazione di una norma
+nuova).
+
+- `search.FASI_ITER` + `iter_parlamentare()`: una ricerca per **fase**, su camera.it e
+  senato.it (la fase "legge approvata" guarda anche GU e Normattiva). La vecchia
+  `parlamento()` faceva una ricerca indistinta e resta per `/api/istituzionali`.
+- `POST /api/lavori` = il contesto separato. **Non si apre ad ogni ricerca**: `/api/fonti`
+  restituisce `genesi.motivi` e il frontend mostra la card solo se la lista non e' vuota;
+  gli atti si caricano al clic.
+- `motivi_genesi()` decide **senza AI**, da segnali osservabili: parole della domanda
+  (ratio/perche'/finalita' · differenze/riforma/previgente · applicazione/decorrenza),
+  norma **recente** (≤3 anni), `versioni>1`, `abrogato`. Lista vuota = card chiusa.
+- ⚠️ **Trappola (bug trovato dai test)**: i numeri di articolo collidono con gli anni —
+  "art. 2043 c.c." veniva letto come l'anno 2043 e marcato "norma recente". `_ART_RE`
+  toglie prima il riferimento all'articolo e `_ANNO_RE` riconosce l'anno **solo** dove e'
+  davvero tale (dopo la barra, "241/1990", o in una data). C'e' un test di regressione.
+- Frontend: card `#card-banche` (blocchi per fonte) e `#card-genesi` (motivi + pulsante
+  che carica le fasi).
+
+## Test (`backend/test_banche.py`)
+18 test **senza rete**: i provider sono sostituiti con una finta SERP, cosi' la logica
+(deduplica, restrizione al dominio, attribuzione, degrado a vuoto, trigger della genesi)
+e' verificabile in modo deterministico.
+```bash
+.venv/bin/python backend/test_banche.py     # oppure: python3 -m pytest backend/test_banche.py -q
+```
+⚠️ I **domini giuridici e i motori di ricerca sono bloccati** nell'ambiente di sviluppo
+Claude Code (proxy: 403 su CONNECT). Qui i risultati sono sempre vuoti **per progetto**:
+la resa reale si verifica solo sul deploy Railway o da una macchina con rete libera.
+
 ## Decisioni chiave (fissate con l'utente)
 - **Niente generazione AI** delle interpretazioni: solo ricerca web reale con link, per
   evitare citazioni giurisprudenziali inventate. Non introdurre chiamate a LLM per questo.

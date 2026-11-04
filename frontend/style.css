@@ -452,3 +452,24 @@ body.embed .brand { display: none; }
 body.embed .hero { padding-top: 22px; padding-bottom: 22px; }
 body.embed .hero-glow { opacity: .45; }
 body.embed main { padding-top: 12px; }
+
+/* --- Blocchi per banca dati e genesi della norma --- */
+.banche-blocchi{display:flex;flex-direction:column;gap:14px}
+.bd-blocco{border:1px solid var(--line,#e3e6ef);border-radius:12px;padding:12px 14px}
+.bd-nome{font-size:15px;margin:0 0 2px;display:flex;align-items:center;gap:8px}
+.bd-conta{font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px;
+  background:var(--chip-bg,#eef1f8);color:var(--muted,#5b6479)}
+.bd-desc{font-size:12.5px;color:var(--muted,#5b6479);margin:0 0 8px}
+.bd-list{margin:8px 0 10px;padding-left:18px;display:flex;flex-direction:column;gap:7px}
+.bd-list li{font-size:14px;line-height:1.5}
+.bd-snip{display:block;font-size:12.5px;color:var(--muted,#5b6479);margin-top:2px}
+.bd-links{display:flex;flex-wrap:wrap;gap:12px;font-size:13px}
+.genesi-motivi{font-size:14px;margin-bottom:10px}
+.genesi-motivi ul{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
+.genesi-perche{font-weight:600;margin:0}
+.disclaimer-min{font-size:12px;color:var(--muted,#5b6479);margin-top:12px;line-height:1.55}
+.btn-ghost{font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;
+  background:var(--chip-bg,#eef1f8);color:var(--accent,#1f3a63);
+  border:1px solid var(--line,#e3e6ef);border-radius:10px;padding:9px 16px;margin-top:4px}
+.btn-ghost:hover{border-color:var(--accent,#1f3a63)}
+.btn-ghost[disabled]{opacity:.55;cursor:default}

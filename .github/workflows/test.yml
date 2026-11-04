@@ -1,0 +1,30 @@
+name: test
+
+# I test non toccano la rete (i provider di ricerca sono sostituiti con una
+# finta SERP), quindi girano identici in CI e in locale.
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+
+      - name: Installa le dipendenze
+        run: pip install -r requirements.txt
+
+      # Prende gli errori di sintassi/import che romperebbero il deploy
+      # senza farsi vedere dai test.
+      - name: L'app si importa
+        run: python -c "import app; print(len(app.app.routes), 'route')"
+        working-directory: backend
+
+      - name: Test (senza rete)
+        run: python backend/test_banche.py

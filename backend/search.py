@@ -20,6 +20,7 @@ from dataclasses import dataclass, asdict
 from urllib.parse import unquote, urlparse, quote_plus
 
 import requests
+from concurrent.futures import ThreadPoolExecutor
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " \
      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -35,6 +36,7 @@ TRUSTED = {
     "italgiure.giustizia.it": 10,
     "giustizia-amministrativa.it": 9,
     "cortecostituzionale.it": 9,
+    "giurcost.org": 8,
     "brocardi.it": 8,
     "normattiva.it": 6,
     "gazzettaufficiale.it": 6,
@@ -94,7 +96,7 @@ def _rank(hits: list, n: int, drop_docs: bool = True) -> list:
 
 
 # ---------------------------------------------------------------- Brave API
-def _brave(query: str, n: int) -> list:
+def _brave(query: str, n: int, dedupe: str = "domain") -> list:
     try:
         r = requests.get(
             BRAVE_ENDPOINT,
@@ -112,11 +114,12 @@ def _brave(query: str, n: int) -> list:
     for item in (data.get("web", {}) or {}).get("results", []):
         url = item.get("url", "")
         dom = _domain(url)
-        if not url.startswith("http") or not dom or dom in seen:
+        key = dom if dedupe == "domain" else url
+        if not url.startswith("http") or not dom or key in seen:
             continue
         if any(x in dom for x in BLOCK):
             continue
-        seen.add(dom)
+        seen.add(key)
         hits.append(Hit(title=_strip(item.get("title", "")), url=url,
                         snippet=_strip(item.get("description", "")),
                         source=dom, trusted=dom in TRUSTED))
@@ -133,7 +136,7 @@ def _unwrap(url: str) -> str:
     return url
 
 
-def _ddg(query: str, n: int) -> list:
+def _ddg(query: str, n: int, dedupe: str = "domain") -> list:
     try:
         r = requests.post(DDG, data={"q": query}, headers={"User-Agent": UA}, timeout=TIMEOUT)
         r.raise_for_status()
@@ -154,7 +157,7 @@ def _ddg(query: str, n: int) -> list:
              re.search(r'result__snippet[^>]*>(.*?)</div>', b, re.S)
         snippet = _strip(ms.group(1)) if ms else ""
         dom = _domain(url)
-        key = dom + title[:20]
+        key = (dom + title[:20]) if dedupe == "domain" else url
         if not url.startswith("http") or not dom or key in seen:
             continue
         if any(x in dom for x in BLOCK):
@@ -166,7 +169,7 @@ def _ddg(query: str, n: int) -> list:
 
 
 # --------------------------------------------------------- Startpage (keyless)
-def _startpage(query: str, n: int, drop_docs: bool = True) -> list:
+def _startpage(query: str, n: int, drop_docs: bool = True, dedupe: str = "domain") -> list:
     """Risultati Google via Startpage: nessuna API key, nessuna registrazione."""
     try:
         r = requests.get(
@@ -190,11 +193,12 @@ def _startpage(query: str, n: int, drop_docs: bool = True) -> list:
         url = hm.group(1) if hm else ""
         title = _strip(m.group(2))
         dom = _domain(url)
-        if not url.startswith("http") or not dom or dom in seen or not title:
+        key = dom if dedupe == "domain" else url
+        if not url.startswith("http") or not dom or key in seen or not title:
             continue
         if any(x in dom for x in BLOCK):
             continue
-        seen.add(dom)
+        seen.add(key)
         hits.append(Hit(title=title, url=url, snippet=snips[i] if i < len(snips) else "",
                         source=dom, trusted=dom in TRUSTED))
     return _rank(hits, n, drop_docs)
@@ -210,11 +214,15 @@ def _engines():
     return chain
 
 
-def web_search(query: str, n: int = 6) -> list:
-    """Prova i provider keyless in sequenza finche' uno restituisce risultati."""
+def web_search(query: str, n: int = 6, dedupe: str = "domain") -> list:
+    """Prova i provider keyless in sequenza finche' uno restituisce risultati.
+
+    `dedupe="url"` serve alle ricerche ristrette a un singolo dominio
+    (operatore `site:`): deduplicando per dominio tornerebbe UN solo risultato.
+    """
     for engine in _engines():
         try:
-            hits = engine(query, n)
+            hits = engine(query, n, dedupe=dedupe)
         except Exception:
             hits = []
         if hits:
@@ -235,18 +243,214 @@ def giurisprudenza(label: str, extra: str = "") -> list:
 def deep_links(ref_label: str) -> list:
     """Ricerche pronte verso banche dati GRATUITE (sempre disponibili)."""
     q = quote_plus(ref_label)
-    return [
-        {"name": "Corte di Cassazione (ItalgiureWeb)",
-         "url": "https://www.italgiure.giustizia.it/sncass/"},
-        {"name": "Corte Costituzionale",
-         "url": "https://www.cortecostituzionale.it/actionPronuncia.do"},
+    links = []
+    for b in BANCHE:
+        links.append({"name": b["ricerca_nome"], "url": _url_ricerca(b, ref_label)})
+        if b.get("portale"):
+            links.append(b["portale"])
+    links += [
         {"name": "Giurisprudenza su Google Scholar",
          "url": f"https://scholar.google.com/scholar?q={q}"},
-        {"name": "Brocardi — spiegazioni e massime",
-         "url": f"https://www.brocardi.it/ricerca/?q={q}"},
         {"name": "Ricerca web generale",
          "url": f"https://duckduckgo.com/?q={q}+giurisprudenza"},
     ]
+    return links
+
+
+# ======================================= BANCHE DATI INTERROGATE PER DOMINIO
+# Finche' la giurisprudenza arriva da UNA ricerca generica, che compaia la
+# Cassazione o la Consulta e' questione di fortuna: TRUSTED si limita a
+# riordinare cio' che il motore ha gia' restituito. Qui invece ogni banca dati
+# viene interrogata CON UNA RICERCA RISTRETTA AL SUO DOMINIO (operatore
+# `site:`), cosi' i risultati sono attribuibili alla corte che li ha emessi.
+#
+# Nessuno scraping dei portali: si passa sempre dai provider gia' in uso, che
+# reggono i blocchi anti-bot molto meglio di un client nostro verso siti
+# (Italgiure in primis) notoriamente ostili ai client automatici.
+BANCHE = (
+    {"id": "cassazione", "nome": "Corte di Cassazione",
+     "domini": ("italgiure.giustizia.it", "cortedicassazione.it"),
+     "termini": "sentenza massima",
+     "ricerca_nome": "Cassazione - cerca questa norma",
+     "portale": {"name": "Corte di Cassazione (ItalgiureWeb)",
+                 "url": "https://www.italgiure.giustizia.it/sncass/"}},
+    {"id": "costituzionale", "nome": "Corte Costituzionale",
+     "domini": ("cortecostituzionale.it", "giurcost.org"),
+     "termini": "sentenza ordinanza illegittimita costituzionale",
+     "ricerca_nome": "Corte Costituzionale - cerca questa norma",
+     "portale": {"name": "Corte Costituzionale - pronunce",
+                 "url": "https://www.cortecostituzionale.it/actionPronuncia.do"}},
+    {"id": "gazzetta", "nome": "Gazzetta Ufficiale",
+     "domini": ("gazzettaufficiale.it",),
+     "termini": "pubblicazione testo",
+     "ricerca_nome": "Gazzetta Ufficiale - cerca questa norma",
+     "portale": {"name": "Gazzetta Ufficiale", "url": "https://www.gazzettaufficiale.it/"}},
+    {"id": "brocardi", "nome": "Brocardi",
+     "domini": ("brocardi.it",),
+     "termini": "spiegazione massime",
+     "ricerca_nome": "Brocardi - spiegazioni e massime",
+     "portale": None},
+)
+
+
+def _url_ricerca(banca: dict, label: str) -> str:
+    """Link che PORTA CON SE' la query.
+
+    I portali di Cassazione e Consulta espongono form che non accettano la
+    ricerca in query string: linkarli e basta scarica sull'utente il compito di
+    ridigitare tutto. Si passa quindi da un motore con l'operatore `site:`, la
+    cui forma di URL e' stabile e verificabile.
+    """
+    siti = " OR ".join("site:" + d for d in banca["domini"])
+    return "https://duckduckgo.com/?q=" + quote_plus(f"{siti} {label}")
+
+
+def _cerca_banca(banca: dict, label: str, extra: str, n: int) -> dict:
+    siti = " OR ".join("site:" + d for d in banca["domini"])
+    q = " ".join(x for x in (siti, label, extra, banca["termini"]) if x)
+    try:
+        hits = web_search(q, n, dedupe="url")
+    except Exception:
+        hits = []
+    # L'operatore site: non e' onorato allo stesso modo da tutti i provider:
+    # si filtra comunque per dominio, cosi' l'attribuzione alla corte e' certa.
+    hits = [h for h in hits if any(d in h.get("source", "") for d in banca["domini"])]
+    return {"id": banca["id"], "nome": banca["nome"], "results": hits[:n],
+            "ricerca": _url_ricerca(banca, label), "portale": banca.get("portale")}
+
+
+def banche_dati(label: str, extra: str = "", n: int = 4) -> list:
+    """Interroga in parallelo ogni banca dati e restituisce i blocchi per corte.
+
+    Un blocco senza risultati NON viene nascosto: resta con i suoi link, cosi'
+    l'utente ha sempre una via verificabile (stesso principio dei deep_links).
+    """
+    if not label:
+        return []
+    with ThreadPoolExecutor(max_workers=len(BANCHE)) as ex:
+        futures = [ex.submit(_cerca_banca, b, label, extra, n) for b in BANCHE]
+        return [f.result() for f in futures]
+
+
+# ============================================ ITER PARLAMENTARE (contesto a parte)
+# La vecchia funzione `parlamento()` faceva UNA ricerca indistinta. Una norma
+# pero' attraversa fasi diverse, e un giurista cerca quasi sempre UNA di
+# quelle: il testo presentato, cosa si e' detto in commissione, quali
+# emendamenti sono passati, come e' uscita la legge. Qui ogni fase e'
+# interrogata per conto suo, cosi' il risultato dice A CHE PUNTO DELL'ITER
+# appartiene invece di mescolare tutto.
+FASI_ITER = (
+    {"id": "ddl", "nome": "Disegni e proposte di legge",
+     "descrizione": "Il testo come e' stato presentato alle Camere.",
+     "domini": ("camera.it", "senato.it"),
+     "termini": "disegno di legge proposta di legge testo presentato"},
+    {"id": "lavori", "nome": "Lavori preparatori",
+     "descrizione": "Relazione illustrativa, esame in commissione, discussione in aula.",
+     "domini": ("camera.it", "senato.it"),
+     "termini": "lavori preparatori relazione illustrativa commissione discussione aula resoconto"},
+    {"id": "emendamenti", "nome": "Emendamenti",
+     "descrizione": "Proposte di modifica al testo, approvate o respinte.",
+     "domini": ("camera.it", "senato.it"),
+     "termini": "emendamenti fascicolo approvati respinti"},
+    {"id": "legge", "nome": "Legge approvata",
+     "descrizione": "Il testo definitivo e la sua pubblicazione.",
+     "domini": ("gazzettaufficiale.it", "normattiva.it", "camera.it", "senato.it"),
+     "termini": "legge approvata testo definitivo pubblicata in gazzetta ufficiale"},
+)
+
+PORTALI_ITER = (
+    {"name": "Camera - Progetti di legge", "url": "https://www.camera.it/leg19/126"},
+    {"name": "Senato - Disegni di legge (iter)",
+     "url": "https://www.senato.it/leg/19/BGT/Schede/Ddliter/index.html"},
+    {"name": "Normattiva - testo vigente e multivigenza", "url": "https://www.normattiva.it/"},
+)
+
+
+def _cerca_fase(fase: dict, label: str, extra: str, n: int) -> dict:
+    siti = " OR ".join("site:" + d for d in fase["domini"])
+    q = " ".join(x for x in (siti, label, extra, fase["termini"]) if x)
+    try:
+        hits = web_search(q, n, dedupe="url")
+    except Exception:
+        hits = []
+    hits = [h for h in hits if any(d in h.get("source", "") for d in fase["domini"])]
+    return {"id": fase["id"], "nome": fase["nome"], "descrizione": fase["descrizione"],
+            "results": hits[:n],
+            "ricerca": "https://duckduckgo.com/?q=" + quote_plus(
+                " ".join((siti, label, fase["termini"])))}
+
+
+def iter_parlamentare(label: str, extra: str = "", n: int = 4) -> list:
+    """Blocchi per fase dell'iter: ddl -> lavori -> emendamenti -> legge."""
+    if not label:
+        return []
+    with ThreadPoolExecutor(max_workers=len(FASI_ITER)) as ex:
+        futures = [ex.submit(_cerca_fase, f, label, extra, n) for f in FASI_ITER]
+        return [f.result() for f in futures]
+
+
+# -------- quando conviene richiamare il contesto "genesi della norma"
+# I numeri di articolo collidono con gli anni ("art. 2043 c.c." non e' il 2043):
+# si toglie prima il riferimento all'articolo, poi si cerca l'anno SOLO dove e'
+# davvero un anno - dopo la barra ("241/1990") o in una data ("7 agosto 1990").
+_ART_RE = re.compile(
+    r"\bart(?:icolo)?\.?\s*\d+(?:[-\s]?(?:bis|ter|quater|quinquies|sexies|septies|octies))?",
+    re.I)
+_ANNO_RE = re.compile(
+    r"(?:/\s*|\bdel\s+|\bn\.?\s*\d{1,5}\s+del\s+|\b\d{1,2}\s+[a-z]+\s+)((?:18|19|20)\d{2})\b",
+    re.I)
+_SEGNALI = (
+    ("ratio", ("ratio", "perche", "perché", "finalita", "finalità", "scopo",
+               "intenzione del legislatore", "spirito della norma")),
+    ("confronto", ("differenz", "novita", "novità", "riforma", "riformat", "modific",
+                   "previgente", "prima della", "rispetto alla precedente", "abrogat")),
+    ("applicazione", ("applicazione", "applicare", "si applica", "entrata in vigore",
+                      "transitori", "decorrenza")),
+)
+
+
+def motivi_genesi(label: str, extra: str = "", versioni: int = 0,
+                  abrogato: bool = False, anno_corrente: int = 0) -> list:
+    """Perche' valga la pena aprire i lavori parlamentari, in parole chiare.
+
+    Niente AI: sono segnali osservabili (eta' della norma, stratificazione,
+    parole della domanda). Lista vuota = il contesto resta chiuso.
+    """
+    testo = (label + " " + (extra or "")).lower()
+    motivi = []
+
+    for _id, parole in _SEGNALI:
+        if any(p in testo for p in parole):
+            motivi.append({
+                "ratio": "La domanda riguarda la ratio della norma: i lavori "
+                         "preparatori dicono cosa il legislatore voleva ottenere.",
+                "confronto": "La domanda tocca il confronto con la disciplina "
+                             "precedente: l'iter mostra cosa e' cambiato e perche'.",
+                "applicazione": "La domanda riguarda l'applicazione: nei lavori si "
+                                "trovano regime transitorio e decorrenze.",
+            }[_id])
+
+    if versioni and versioni > 1:
+        motivi.append("La norma ha %d versioni successive: l'iter spiega le modifiche."
+                      % versioni)
+    if abrogato:
+        motivi.append("La norma risulta abrogata: i lavori aiutano a capire da cosa "
+                      "e' stata sostituita.")
+
+    if anno_corrente:
+        anni = [int(m.group(1)) for m in _ANNO_RE.finditer(_ART_RE.sub(" ", label))]
+        if anni and max(anni) >= anno_corrente - 3:
+            motivi.append("Norma recente (%d): per le nuove discipline la "
+                          "giurisprudenza e' ancora scarsa e i lavori preparatori "
+                          "sono spesso la fonte piu' solida." % max(anni))
+
+    # dedup conservando l'ordine
+    visti, out = set(), []
+    for m in motivi:
+        if m not in visti:
+            visti.add(m)
+            out.append(m)
+    return out
 
 
 # ================================================== FONTI ISTITUZIONALI

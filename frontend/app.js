@@ -159,6 +159,8 @@ async function runSearch(payload) {
     const combined = dedupeByUrl([...interp, ...giuri]);
     renderFonti(combined);
     renderBanche(fonti.banche_dati);
+    renderBancheBlocchi(fonti.banche_dati_risultati);
+    preparaGenesi(fonti.genesi, payload);
     $("#disclaimer").textContent = fonti.disclaimer ||
       "Sintesi e fonti provengono da ricerche web su fonti gratuite e vanno verificate. Il testo dell'articolo è tratto da Normattiva. Non costituisce parere legale.";
 
@@ -448,6 +450,85 @@ function renderBanche(links) {
   box.innerHTML = links.map((l) =>
     `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.name)}</a>`
   ).join("");
+}
+
+/* Un blocco per banca dati. Un blocco senza risultati NON sparisce: resta coi
+   suoi link, cosi' l'utente ha comunque una via verificabile (e capisce che
+   quella fonte e' stata interrogata, non dimenticata). */
+function renderBancheBlocchi(blocchi) {
+  const box = $("#banche-blocchi");
+  if (!box) return;
+  if (!blocchi || !blocchi.length) { box.innerHTML = ""; return; }
+  box.innerHTML = blocchi.map((b) => {
+    const voci = (b.results || []).map((h) => `
+      <li><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
+      ${h.snippet ? `<span class="bd-snip">${esc(h.snippet)}</span>` : ""}</li>`).join("");
+    const corpo = voci
+      ? `<ul class="bd-list">${voci}</ul>`
+      : `<p class="empty-note">Nessun risultato diretto. Apri la ricerca sulla fonte.</p>`;
+    const links = [
+      `<a href="${esc(b.ricerca)}" target="_blank" rel="noopener">Cerca su questa fonte &rarr;</a>`,
+      b.portale ? `<a href="${esc(b.portale.url)}" target="_blank" rel="noopener">${esc(b.portale.name)}</a>` : "",
+    ].filter(Boolean).join("");
+    return `<section class="bd-blocco">
+      <h3 class="bd-nome">${esc(b.nome)} <span class="bd-conta">${(b.results || []).length}</span></h3>
+      ${corpo}<div class="bd-links">${links}</div></section>`;
+  }).join("");
+}
+
+/* Contesto separato: non si apre ad ogni ricerca. Compare quando il backend
+   segnala dei motivi (domanda sulla ratio, confronto col previgente, norma
+   recente o stratificata); i lavori veri si caricano al clic. */
+function preparaGenesi(genesi, payload) {
+  const card = $("#card-genesi");
+  const motivi = (genesi && genesi.motivi) || [];
+  if (!card) return;
+  $("#genesi-body").innerHTML = "";
+  if (!motivi.length) { card.classList.add("hidden"); return; }
+  card.classList.remove("hidden");
+  $("#genesi-motivi").innerHTML =
+    `<p class="genesi-perche">Per questa ricerca puo&#768; servire:</p><ul>` +
+    motivi.map((m) => `<li>${esc(m)}</li>`).join("") + "</ul>";
+  const btn = $("#genesi-apri");
+  btn.hidden = false;
+  btn.onclick = () => caricaGenesi(payload, btn);
+}
+
+async function caricaGenesi(payload, btn) {
+  const body = $("#genesi-body");
+  btn.disabled = true;
+  body.innerHTML = '<p class="empty-note loading-note"><span class="spinner" aria-hidden="true"></span>Cerco gli atti parlamentari…</p>';
+  try {
+    const res = await fetch("/api/lavori", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const d = await res.json();
+    if (!d.ok) { body.innerHTML = `<p class="empty-note">${esc(d.error || "Nessun risultato.")}</p>`; return; }
+    const fasi = (d.fasi || []).map((f) => {
+      const voci = (f.results || []).map((h) =>
+        `<li><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a></li>`).join("");
+      return `<section class="bd-blocco">
+        <h3 class="bd-nome">${esc(f.nome)} <span class="bd-conta">${(f.results || []).length}</span></h3>
+        <p class="bd-desc">${esc(f.descrizione)}</p>
+        ${voci ? `<ul class="bd-list">${voci}</ul>`
+               : `<p class="empty-note">Nessun atto trovato per questa fase.</p>`}
+        <div class="bd-links"><a href="${esc(f.ricerca)}" target="_blank" rel="noopener">Cerca questa fase &rarr;</a></div>
+      </section>`;
+    }).join("");
+    const portali = (d.portali || []).map((p) =>
+      `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.name)}</a>`).join("");
+    body.innerHTML = fasi +
+      `<div class="banche"><p class="banche-label">Portali istituzionali</p>
+       <div class="banche-links">${portali}</div></div>` +
+      (d.disclaimer ? `<p class="disclaimer-min">${esc(d.disclaimer)}</p>` : "");
+    btn.hidden = true;
+  } catch (e) {
+    body.innerHTML = '<p class="empty-note">Impossibile contattare il server. Riprova.</p>';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function esc(s) {

@@ -98,7 +98,27 @@ nuova).
 - `app.js`: `syncUrl()` scrive `?q=` nell'URL (condivisibile) e il titolo scheda diventa
   la norma trovata.
 - Limite strutturale: i risultati sono resi via JS su ricerca → non posizionabili.
-  Pagine server-rendered per articolo: progetto in `docs/design-pagine-articolo.md` (proposta, non implementata).
+  Le pagine server-rendered per articolo risolvono questo limite: vedi sotto.
+
+## Pagine articolo server-rendered (fase 1, 2026-11-08)
+Progetto completo: `docs/design-pagine-articolo.md`. URL `/{atto}/art-{n}` (es.
+`/codice-civile/art-2043`, `/codice-penale/art-416-bis`, `/legge-241-1990/art-1`).
+- `catalogo.py`: slug <-> LawRef. Catalogo (slug leggibili, in sitemap): 4 codici +
+  Costituzione. Altri atti: slug numerici (`legge|dlgs|dl|dpr|rd-N-AAAA`), serviti ma non
+  in sitemap. Alias/maiuscole -> **301**. **Gli slug pubblicati non si cambiano.**
+- `cache.py`: SQLite in `DATA_DIR` (Railway: volume su `/data`). Fresco 7 gg, poi
+  stale-while-revalidate fino a 180 gg; "non trovato" in cache 24 h; errori di rete MAI in
+  cache. Freno: un recupero ogni `NORMATTIVA_FETCH_INTERVAL` s (default 2 = ~1 req/s).
+- `pagine.py`: 200 / 301 / 404 / **503 + Retry-After** se Normattiva e' giu' e non c'e'
+  copia (mai 404: Google de-indicizzerebbe). `ArticleResult.network_error` distingue i due casi.
+  Sitemap index `/sitemap.xml` -> `/sitemaps/{atto}.xml` (numeri dall'indice Normattiva).
+- `frontend/index.html` e' un **template Jinja** (servito solo da `pagine.render`): stessa
+  pagina per home e articolo. Sull'articolo: H1 = articolo, testo nell'HTML, JSON-LD
+  `Legislation`, `#articolo-iniziale` (JSON) da cui `app.js` riparte dalla fase 2 senza
+  richiamare `/api/articolo`. Hero compatto (`body.pagina-articolo`).
+- Nell'HTML indicizzato SOLO il testo normativo (art. 5 L. 633/1941). Interpretazione e
+  giurisprudenza restano caricate dal browser (estratti di terzi, duplicati, ricerca live).
+- Test: `backend/test_pagine.py` (20, senza rete; serve `httpx` per TestClient).
 
 ## Test (`backend/test_banche.py`)
 18 test **senza rete**: i provider sono sostituiti con una finta SERP, cosi' la logica
@@ -107,6 +127,7 @@ e' verificabile in modo deterministico.
 ```bash
 .venv/bin/python backend/test_banche.py     # oppure: python3 -m pytest backend/test_banche.py -q
 ```
+Le pagine hanno la loro suite: `python3 backend/test_pagine.py`.
 Girano anche in CI (`.github/workflows/test.yml`, su ogni push e PR), insieme a un
 `import app` che prende gli errori di sintassi che romperebbero il deploy.
 ⚠️ I **domini giuridici e i motori di ricerca sono bloccati** nell'ambiente di sviluppo

@@ -18,7 +18,7 @@ jobs:
           cache: pip
 
       - name: Installa le dipendenze
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt httpx
 
       # Prende gli errori di sintassi/import che romperebbero il deploy
       # senza farsi vedere dai test.
@@ -27,4 +27,4 @@ jobs:
         working-directory: backend
 
       - name: Test (senza rete)
-        run: python backend/test_banche.py
+        run: python backend/test_banche.py && python backend/test_pagine.py

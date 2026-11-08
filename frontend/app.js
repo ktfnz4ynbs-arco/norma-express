@@ -118,12 +118,17 @@ const BASE_TITLE = document.title;
 function syncUrl(q) {
   try {
     const u = new URL(location.href);
+    u.pathname = "/";   // da una pagina articolo, una nuova ricerca torna alla SPA
     if (q) u.searchParams.set("q", q); else u.searchParams.delete("q");
     history.replaceState(null, "", u);
   } catch (_) { /* history non disponibile: nessun problema */ }
 }
 
-async function runSearch(payload) {
+/* `iniziale` = risposta di /api/articolo gia' resa dal server (pagina articolo
+   /codice-civile/art-2043): niente seconda richiesta a Normattiva, si parte dalla fase 2. */
+async function runSearch(payload, iniziale) {
+  if (iniziale) return mostraRisultati(payload, iniziale);
+  document.querySelectorAll(".solo-pagina").forEach((el) => el.remove());
   syncUrl(payload.query || [payload.articolo && `art ${payload.articolo}`,
     payload.tipo, payload.numero && payload.anno && `${payload.numero}/${payload.anno}`]
     .filter(Boolean).join(" "));
@@ -148,8 +153,19 @@ async function runSearch(payload) {
     } else {
       renderArticle(art.article);
     }
+    document.title = art.label ? `${art.label} — Norma Express` : BASE_TITLE;
+    await mostraRisultati(payload, art, true);
+  } catch (err) {
+    showStatus('<span class="error-box">Impossibile contattare il server. Riprova.</span>', true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function mostraRisultati(payload, art, scroll) {
+  try {
+    if (!scroll && art.article) renderVigenza(art.article);   // pagina: il resto e' gia' nell'HTML
     currentLabel = art.label || "";
-    document.title = currentLabel ? `${currentLabel} — Norma Express` : BASE_TITLE;
     $("#sintesi-body").innerHTML =
       '<div class="digest"><div class="digest-unified provisional"><span class="spinner" aria-hidden="true"></span>Sto sintetizzando interpretazione e giurisprudenza…</div>' +
       '<p class="verify-cap" hidden>Ogni passaggio riporta la fonte <strong>[n]</strong>: clicca per verificarlo.</p></div>';
@@ -161,7 +177,7 @@ async function runSearch(payload) {
     statusEl.classList.add("hidden");
     resultsEl.hidden = false;
     document.body.classList.add("has-results");
-    resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (scroll) resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
 
     // FASE 2 — le fonti (interpretazione + giurisprudenza), elenco combinato
     const resFonti = await fetch("/api/fonti", {
@@ -183,9 +199,7 @@ async function runSearch(payload) {
     // FASE 3 — la sintesi unica (interpretazione + giurisprudenza)
     loadSintesi(interp.map((h) => h.url), giuri.map((h) => h.url));
   } catch (err) {
-    showStatus('<span class="error-box">Impossibile contattare il server. Riprova.</span>', true);
-  } finally {
-    setBusy(false);
+    $("#fonti-body").innerHTML = '<p class="empty-note">Fonti non disponibili al momento. Riprova.</p>';
   }
 }
 
@@ -560,6 +574,14 @@ function esc(s) {
    caso): così l'incorporamento resta sempre allineato a questa app e ogni
    miglioria di Norma Express vi appare automaticamente. */
 (function initFromUrl() {
+  const pre = document.getElementById("articolo-iniziale");
+  if (pre) {
+    try {
+      const d = JSON.parse(pre.textContent);
+      runSearch(d.payload, d.art);
+    } catch (_) { /* il testo resta comunque visibile: e' nell'HTML */ }
+    return;
+  }
   const params = new URLSearchParams(location.search);
   if (params.get("embed") === "1") document.body.classList.add("embed");
   const q = (params.get("q") || "").trim();

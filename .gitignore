@@ -7,3 +7,5 @@ venv/
 *.log
 scratch/
 .claude/
+# cache SQLite delle pagine (in produzione: volume Railway, DATA_DIR)
+data/

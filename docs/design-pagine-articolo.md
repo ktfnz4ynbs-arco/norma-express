@@ -1,6 +1,7 @@
 # Progetto — Pagine server-rendered per articolo
 
-Stato: **proposta** (2026-11-08). Nessun codice ancora scritto.
+Stato: **fase 1 implementata** (2026-11-08): `catalogo.py`, `cache.py`, `pagine.py`,
+`test_pagine.py`. Fasi 2 e 3 da fare. Decisioni utente: volume Railway sì, slug leggibili.
 Obiettivo: rendere ogni articolo una pagina con URL proprio, testo già nell'HTML,
 indicizzabile da Google, senza tradire i vincoli del progetto (niente AI generativa,
 niente fonti a pagamento, prima l'articolo poi il resto).
@@ -189,9 +190,13 @@ Ordine nella pagina, tutto nell'HTML iniziale salvo dove indicato:
 ## 7. Sitemap
 
 - `/sitemap.xml` diventa un **sitemap index**: home + una sitemap per atto in catalogo.
-- `/sitemaps/{atto}.xml`: indice + **solo articoli già in cache con `status=ok`**, con
-  `lastmod = changed_at`. Gli articoli non ancora scaricati entrano quando la cache si
-  popola: niente URL in sitemap che poi rispondono 503.
+- `/sitemaps/{atto}.xml`: i numeri articolo vengono dall'**indice Normattiva dell'atto**
+  (una richiesta per atto, in cache 7 giorni) + gli articoli già in cache. `lastmod` solo
+  per gli articoli in cache (= `changed_at`), mai inventato.
+  *Correzione rispetto alla prima stesura*, che voleva "solo articoli già in cache": in
+  fase 1, senza `warm.py`, la sitemap sarebbe rimasta vuota (la cache si riempie solo con
+  le visite). Il prezzo: un articolo non ancora in cache viene scaricato alla visita di
+  Googlebot, a ritmo frenato; se la coda è lunga risponde 503 e Google rallenta da sé.
 - Limite 50.000 URL per file: il codice civile (~3.000 articoli) ci sta.
 
 ---

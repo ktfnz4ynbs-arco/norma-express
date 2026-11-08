@@ -114,7 +114,7 @@ class LawRef:
 
 
 def _find_article(text: str) -> Optional[str]:
-    m = re.search(r"\bart(?:icolo|\.)?\s*\.?\s*(\d+)\s*(?:[-\s]?(bis|ter|quater|quinquies|sexies|septies|octies))?",
+    m = re.search(r"\bart(?:icolo|\.)?\s*\.?\s*(\d+)\s*(?:[-\s]?(quinquiesdecies|sexiesdecies|septiesdecies|octiesdecies|quaterdecies|duodevicies|novesdecies|undevicies|terdecies|duodecies|undecies|quinquies|septies|decies|sexies|octies|novies|nonies|quater|vicies|bis|ter)\b)?",
                   text, re.I)
     if not m:
         return None

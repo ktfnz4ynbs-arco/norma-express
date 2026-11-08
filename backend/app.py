@@ -16,14 +16,16 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import enrich
 import lawref
+import pagine
 import search
 from normattiva import fetch_article, fetch_index, resolve_law
 
@@ -33,6 +35,7 @@ app = FastAPI(title="Norma Express", version="1.0")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 class Query(BaseModel):
@@ -264,13 +267,26 @@ def domanda(req: DomandaReq):
     return {"ok": True, "risposta": risposta, "fonti": fonti}
 
 
+# --- Pagine server-rendered (SEO) + sitemap: vedi pagine.py ---------------
+app.include_router(pagine.router)
+
 # --- Frontend statico (montato per ultimo cosi' le API hanno precedenza) ---
 if FRONTEND.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND)), name="assets")
 
-    @app.get("/")
-    def index():
-        return FileResponse(str(FRONTEND / "index.html"))
+    @app.get("/", response_class=HTMLResponse)
+    def index(request: Request):
+        return pagine.render_home(request)
+
+    @app.get("/robots.txt", include_in_schema=False)
+    def robots(request: Request):
+        return PlainTextResponse(
+            "User-agent: *\nAllow: /\nDisallow: /api/\n\n"
+            f"Sitemap: {pagine.base_url(request)}/sitemap.xml\n")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        return FileResponse(str(FRONTEND / "favicon.svg"), media_type="image/svg+xml")
 
 
 if __name__ == "__main__":

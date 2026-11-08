@@ -51,6 +51,9 @@ class ArticleResult:
     abrogato: bool = False      # rilevamento automatico stato abrogazione
     versions: int = 0           # numero versioni dell'articolo (multivigenza)
     vigenza: str = ""           # data storica richiesta (AAAA-MM-GG) per il link !vig=
+    # Errore TRANSITORIO (rete, timeout, pagina non interpretabile): per le pagine
+    # server-rendered vale 503 "riprova", non 404 "non esiste".
+    network_error: bool = False
 
 
 def _session() -> requests.Session:
@@ -175,7 +178,7 @@ def fetch_article(ref: LawRef) -> ArticleResult:
         r.raise_for_status()
     except requests.RequestException as e:
         return ArticleResult(ok=False, query_label=ref.label, permalink=permalink,
-                             error=f"Normattiva non raggiungibile: {e}")
+                             error=f"Normattiva non raggiungibile: {e}", network_error=True)
 
     page = r.text
     title_m = re.search(r"<title>(.*?)</title>", page, re.S | re.I)
@@ -205,7 +208,8 @@ def fetch_article(ref: LawRef) -> ArticleResult:
         ra.raise_for_status()
     except requests.RequestException as e:
         return ArticleResult(ok=False, query_label=ref.label, act_title=act_title,
-                             permalink=permalink, error=f"Errore nel caricamento dell'articolo: {e}")
+                             permalink=permalink, error=f"Errore nel caricamento dell'articolo: {e}",
+                             network_error=True)
 
     heading, text, in_force = _parse_article(ra.text)
     updates = _parse_updates(ra.text, ref.articolo)
@@ -219,7 +223,8 @@ def fetch_article(ref: LawRef) -> ArticleResult:
     if not text or len(text) < 15:
         return ArticleResult(ok=False, query_label=ref.label, act_title=act_title,
                              permalink=permalink,
-                             error="Testo dell'articolo non estraibile. Apri l'atto su Normattiva.")
+                             error="Testo dell'articolo non estraibile. Apri l'atto su Normattiva.",
+                             network_error=True)
 
     abrogato = bool(re.search(r"ARTICOLO ABROGATO", text, re.I))
     return ArticleResult(ok=True, query_label=ref.label, act_title=act_title,
@@ -239,6 +244,7 @@ class IndexResult:
     groups: list = field(default_factory=list)  # [{partition, articles:[{num,q}]}]
     total: int = 0
     error: str = ""
+    network_error: bool = False
 
 
 _PARTIZ = re.compile(r"\b(LIBRO|TITOLO|CAPO|SEZIONE|PARTE|Capo|Titolo|Libro|Sezione|Parte)\b")
@@ -314,7 +320,7 @@ def fetch_index(ref: "lawref.LawRef") -> IndexResult:
         r.raise_for_status()
     except requests.RequestException as e:
         return IndexResult(ok=False, label=ref.label, permalink=permalink,
-                           error=f"Normattiva non raggiungibile: {e}")
+                           error=f"Normattiva non raggiungibile: {e}", network_error=True)
     page = r.text
     title_m = re.search(r"<title>(.*?)</title>", page, re.S | re.I)
     act_title = (re.sub(r"\s*-\s*Normattiva\s*$", "", title_m.group(1).strip())

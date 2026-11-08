@@ -98,7 +98,7 @@ nuova).
 - `app.js`: `syncUrl()` scrive `?q=` nell'URL (condivisibile) e il titolo scheda diventa
   la norma trovata.
 - Limite strutturale: i risultati sono resi via JS su ricerca → non posizionabili.
-  Per il long-tail servirebbero pagine server-rendered per articolo (es. `/art/2043-codice-civile`).
+  Pagine server-rendered per articolo: progetto in `docs/design-pagine-articolo.md` (proposta, non implementata).
 
 ## Test (`backend/test_banche.py`)
 18 test **senza rete**: i provider sono sostituiti con una finta SERP, cosi' la logica

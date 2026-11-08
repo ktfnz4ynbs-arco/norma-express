@@ -473,3 +473,16 @@ body.embed main { padding-top: 12px; }
   border:1px solid var(--line,#e3e6ef);border-radius:10px;padding:9px 16px;margin-top:4px}
 .btn-ghost:hover{border-color:var(--accent,#1f3a63)}
 .btn-ghost[disabled]{opacity:.55;cursor:default}
+
+/* --- Sezione "Come funziona" (contenuto statico indicizzabile) --- */
+.about { margin: 0; padding: 26px 28px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  color: var(--ink-soft); font-size: 15px; line-height: 1.65; }
+.about h2 { font-family: "Fraunces", Georgia, serif; font-weight: 600; font-size: 22px;
+  color: var(--ink); margin: 0 0 10px; }
+.about h3 { font-size: 15.5px; color: var(--ink); margin: 20px 0 6px; }
+.about p { margin: 0 0 10px; }
+.about ol { margin: 6px 0 4px; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.about strong { color: var(--ink); }
+body.embed .about, body.has-results .about { display: none; }
+@media (max-width: 640px) { .about { padding: 20px 18px; } }

@@ -16,9 +16,10 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -33,6 +34,7 @@ app = FastAPI(title="Norma Express", version="1.0")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 class Query(BaseModel):
@@ -264,13 +266,59 @@ def domanda(req: DomandaReq):
     return {"ok": True, "risposta": risposta, "fonti": fonti}
 
 
+# --- SEO: URL pubblico, robots.txt, sitemap.xml -----------------------------
+def base_url(request: Request) -> str:
+    """URL pubblico assoluto, senza barra finale.
+
+    PUBLIC_URL (es. https://norma-express.up.railway.app) vince sempre: e' la
+    forma canonica. Altrimenti si ricostruisce dagli header del proxy (Railway
+    termina TLS e passa X-Forwarded-Proto/Host), con fallback alla richiesta.
+    """
+    env = os.environ.get("PUBLIC_URL", "").strip().rstrip("/")
+    if env:
+        return env
+    h = request.headers
+    proto = h.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    host = h.get("x-forwarded-host") or h.get("host") or request.url.netloc
+    return f"{proto}://{host.split(',')[0].strip()}"
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots(request: Request):
+    b = base_url(request)
+    return PlainTextResponse(
+        "User-agent: *\nAllow: /\nDisallow: /api/\n\n"
+        f"Sitemap: {b}/sitemap.xml\n")
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap(request: Request):
+    b = base_url(request)
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+           f"  <url><loc>{b}/</loc><changefreq>weekly</changefreq></url>\n"
+           "</urlset>\n")
+    return Response(xml, media_type="application/xml")
+
+
 # --- Frontend statico (montato per ultimo cosi' le API hanno precedenza) ---
 if FRONTEND.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND)), name="assets")
+    _INDEX = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
-    @app.get("/")
-    def index():
-        return FileResponse(str(FRONTEND / "index.html"))
+    @app.get("/", response_class=HTMLResponse)
+    def index(request: Request):
+        # Le pagine di ricerca (?q=) e l'incorporamento (?embed=1) non vanno
+        # indicizzate: sono risultati dinamici, duplicati della home per Google.
+        p = request.query_params
+        robots_val = "noindex, follow" if (p.get("q") or p.get("embed")) else "index, follow"
+        html = (_INDEX.replace("{{BASE_URL}}", base_url(request))
+                      .replace("{{ROBOTS}}", robots_val))
+        return HTMLResponse(html)
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        return FileResponse(str(FRONTEND / "favicon.svg"), media_type="image/svg+xml")
 
 
 if __name__ == "__main__":

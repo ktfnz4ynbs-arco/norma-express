@@ -112,7 +112,21 @@ function showStatus(html, isError) {
   if (isError) resultsEl.hidden = true;
 }
 
+/* SEO/condivisione: l'URL riflette la ricerca (?q=...), cosi' e' copiabile e
+   ricaricabile; il titolo della scheda riporta la norma trovata. */
+const BASE_TITLE = document.title;
+function syncUrl(q) {
+  try {
+    const u = new URL(location.href);
+    if (q) u.searchParams.set("q", q); else u.searchParams.delete("q");
+    history.replaceState(null, "", u);
+  } catch (_) { /* history non disponibile: nessun problema */ }
+}
+
 async function runSearch(payload) {
+  syncUrl(payload.query || [payload.articolo && `art ${payload.articolo}`,
+    payload.tipo, payload.numero && payload.anno && `${payload.numero}/${payload.anno}`]
+    .filter(Boolean).join(" "));
   resultsEl.hidden = true;
   $("#results-ist").hidden = true;
   showStatus('<span class="spinner" aria-hidden="true"></span>Ricerca su Normattiva…');
@@ -135,6 +149,7 @@ async function runSearch(payload) {
       renderArticle(art.article);
     }
     currentLabel = art.label || "";
+    document.title = currentLabel ? `${currentLabel} — Norma Express` : BASE_TITLE;
     $("#sintesi-body").innerHTML =
       '<div class="digest"><div class="digest-unified provisional"><span class="spinner" aria-hidden="true"></span>Sto sintetizzando interpretazione e giurisprudenza…</div>' +
       '<p class="verify-cap" hidden>Ogni passaggio riporta la fonte <strong>[n]</strong>: clicca per verificarlo.</p></div>';
@@ -145,6 +160,7 @@ async function runSearch(payload) {
     $("#disclaimer").textContent = "";
     statusEl.classList.add("hidden");
     resultsEl.hidden = false;
+    document.body.classList.add("has-results");
     resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
 
     // FASE 2 — le fonti (interpretazione + giurisprudenza), elenco combinato
@@ -205,6 +221,7 @@ async function runIstituzionali(query) {
     $("#disclaimer-ist").textContent = d.disclaimer || "";
     statusEl.classList.add("hidden");
     $("#results-ist").hidden = false;
+    document.body.classList.add("has-results");
     $("#results-ist").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (err) {
     showStatus('<span class="error-box">Impossibile contattare il server. Riprova.</span>', true);

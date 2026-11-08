@@ -84,6 +84,22 @@ nuova).
 - Frontend: card `#card-banche` (blocchi per fonte) e `#card-genesi` (motivi + pulsante
   che carica le fasi).
 
+## SEO (2026-11-08)
+- `index.html` ora ha `<!doctype html>` + `<html lang="it">` (prima era in **quirks mode**, senza lingua).
+  Head: title/description con keyword, canonical, Open Graph/Twitter (`frontend/og-image.png`
+  1200×630), favicon SVG, JSON-LD `WebApplication`.
+- Il backend serve `/` sostituendo `{{BASE_URL}}` e `{{ROBOTS}}`: base da env **`PUBLIC_URL`**
+  (impostarla su Railway con il dominio definitivo) o, in mancanza, dagli header
+  `X-Forwarded-*`. `?q=` e `?embed=1` → `noindex, follow` (pagine di risultati dinamici:
+  non vanno indicizzate). `/robots.txt` (Disallow `/api/`), `/sitemap.xml`, `/favicon.ico`, GZip.
+- Sezione statica `#about` ("Come funziona"): unico testo indicizzabile della home, nascosta
+  con `body.has-results` ed in embed. Se cambiano le funzioni, aggiornarla (non promettere
+  fonti/codici non supportati).
+- `app.js`: `syncUrl()` scrive `?q=` nell'URL (condivisibile) e il titolo scheda diventa
+  la norma trovata.
+- Limite strutturale: i risultati sono resi via JS su ricerca → non posizionabili.
+  Per il long-tail servirebbero pagine server-rendered per articolo (es. `/art/2043-codice-civile`).
+
 ## Test (`backend/test_banche.py`)
 18 test **senza rete**: i provider sono sostituiti con una finta SERP, cosi' la logica
 (deduplica, restrizione al dominio, attribuzione, degrado a vuoto, trigger della genesi)

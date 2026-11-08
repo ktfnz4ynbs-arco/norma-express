@@ -30,6 +30,8 @@ import normattiva  # noqa: E402
 import pagine  # noqa: E402
 from normattiva import ArticleResult, IndexResult  # noqa: E402
 
+_PICK_ORIG = normattiva._pick_article_link
+
 client = TestClient(app_mod.app)
 CHIAMATE = []
 
@@ -266,6 +268,53 @@ def test_home_invariata_e_rotte_esistenti():
     assert client.get("/assets/style.css").status_code == 200
     assert "Sitemap:" in client.get("/robots.txt").text
     assert client.get("/api/health").json()["status"] == "ok"
+
+
+# ------------------------------------------- articoli bis/ter (bug 416-bis -> 416)
+_FIX = Path(__file__).resolve().parent / "fixtures" / "cp_416_links.html"
+
+
+def _scelto(articolo):
+    url, versioni = _PICK_ORIG(_FIX.read_text(), articolo, "1")
+    return url, versioni
+
+
+def test_bis_ter_scelgono_il_sottoarticolo_giusto_su_link_reali():
+    url, v = _scelto("416-bis")
+    assert "idArticolo=416&art.idSottoArticolo=2&art.idSottoArticolo1=10" in url, url
+    assert "imUpdate" not in url and v == 10          # vigente; 10 versioni del 416-bis
+    url, _ = _scelto("416")
+    assert "idSottoArticolo=1&" in url, url           # l'articolo base resta il base
+    url, _ = _scelto("416-ter")
+    assert "idSottoArticolo=3&" in url, url
+    assert _scelto("416-quater") == (None, 0)          # non esiste: nessun ripiego sul 416
+
+
+def test_articolo_coincide_rete_di_sicurezza():
+    assert not normattiva.articolo_coincide("Art. 416. (Associazione per delinquere)", "416-bis")
+    assert normattiva.articolo_coincide("Art. 416-bis. Associazioni di tipo mafioso", "416-bis")
+    assert normattiva.articolo_coincide("Art. 2 bis Conseguenze per il ritardo", "2-bis")
+    assert normattiva.articolo_coincide("Art. 21 Tutti hanno diritto", "21")
+    assert normattiva.articolo_coincide("Tutti hanno diritto", "21")   # senza "Art.": si accetta
+    assert not normattiva.articolo_coincide("Art. 25-undecies (Reati)", "25-duodecies")
+
+
+def test_rubrica_dal_testo_se_manca_nell_intestazione():
+    assert pagine.rubrica("Art. 2043", "Art. 2043. (Risarcimento per fatto illecito). Qualunque") \
+        == "Risarcimento per fatto illecito"
+    assert pagine.rubrica("Art. 21", "Art. 21 Tutti hanno diritto") == ""
+    assert pagine.rubrica("Art. 416-bis", "Art. 416-bis. Associazioni di tipo mafioso") == ""
+
+
+def test_versione_dati_svuota_la_cache_vecchia():
+    path = Path(tempfile.mkdtemp(prefix="ne-ver-")) / "c.sqlite"
+    st = cache.Store(path, 0)
+    st._save("art:codice-penale:416-bis", "art:codice-penale", "416-bis", cache.OK,
+             {"text": "Art. 416. (testo sbagliato)"})
+    with st._db() as c:
+        c.execute("PRAGMA user_version=1")                # dati della logica vecchia
+    st2 = cache.Store(path, 0)
+    assert st2._row("art:codice-penale:416-bis") is None
 
 
 if __name__ == "__main__":

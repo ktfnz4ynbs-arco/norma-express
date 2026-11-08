@@ -39,6 +39,10 @@ MAX_WAIT = 20.0          # oltre: meglio un 503 subito che far aspettare il craw
 
 OK, NOTFOUND, UNAVAILABLE = "ok", "notfound", "unavailable"
 
+# Da incrementare quando cambia il modo di estrarre gli articoli da Normattiva.
+# v2 (2026-11-08): gli articoli bis/ter/... restituivano l'articolo base.
+VERSIONE_DATI = 2
+
 
 def _data_dir() -> Path:
     d = Path(os.environ.get("DATA_DIR") or Path(__file__).resolve().parent.parent / "data")
@@ -76,6 +80,11 @@ class Store:
         self._bg = ThreadPoolExecutor(max_workers=1, thread_name_prefix="refresh")
         with self._db() as c:
             c.execute("PRAGMA journal_mode=WAL")
+            # Versione dei dati: se cambia l'ESTRAZIONE (es. fix 416-bis -> 416, v2), le
+            # copie salvate con la logica vecchia possono essere sbagliate: si buttano.
+            if c.execute("PRAGMA user_version").fetchone()[0] < VERSIONE_DATI:
+                c.execute("DROP TABLE IF EXISTS voci")
+                c.execute(f"PRAGMA user_version={VERSIONE_DATI}")
             c.execute("""CREATE TABLE IF NOT EXISTS voci(
                 chiave TEXT PRIMARY KEY, gruppo TEXT, sotto TEXT, json TEXT,
                 sha TEXT, status TEXT, fetched_at REAL, changed_at REAL)""")

@@ -70,6 +70,50 @@ def _clean(node) -> str:
     return txt.strip()
 
 
+# Normattiva codifica il suffisso latino in art.idSottoArticolo: 1 = articolo base,
+# 2 = bis, 3 = ter ... 12 = duodecies (verificato su c.p. 416-bis, L. 241/1990 2-bis,
+# D.Lgs. 231/2001 25-duodecies). art.idSottoArticolo1: 10 = articolo, 20/30 = ".1"/".2".
+# BUG STORICO: si confrontava solo idArticolo, cosi' "416-bis" restituiva l'art. 416.
+ORDINALI = {"bis": 2, "ter": 3, "quater": 4, "quinquies": 5, "sexies": 6, "septies": 7,
+            "octies": 8, "novies": 9, "nonies": 9, "decies": 10, "undecies": 11,
+            "duodecies": 12, "terdecies": 13, "quaterdecies": 14, "quinquiesdecies": 15,
+            "sexiesdecies": 16, "septiesdecies": 17, "octiesdecies": 18, "duodevicies": 18,
+            "novesdecies": 19, "undevicies": 19, "vicies": 20}
+
+
+def _split_articolo(articolo: str):
+    """'416-bis' -> ('416', 2); '2043' -> ('2043', 1); suffisso ignoto -> (None, None)."""
+    m = re.match(r"^\s*(\d+)\s*(?:[-\s]?\s*([a-z]+))?\s*$", (articolo or "").lower())
+    if not m:
+        return None, None
+    if not m.group(2):
+        return m.group(1), 1
+    sotto = ORDINALI.get(m.group(2))
+    return (m.group(1), sotto) if sotto else (None, None)
+
+
+def _sotto(link: str) -> int:
+    m = re.search(r"art\.idSottoArticolo=(\d+)", link)
+    return int(m.group(1)) if m else 1
+
+
+def _sotto1(link: str):
+    m = re.search(r"art\.idSottoArticolo1=(\d+)", link)
+    return int(m.group(1)) if m else None
+
+
+def articolo_coincide(text: str, articolo: str) -> bool:
+    """Il testo estratto apre con "Art. N[-suffisso]": deve essere QUELLO richiesto.
+    Rete di sicurezza contro il ritorno di bug come 416-bis -> 416. Se il testo non
+    apre con "Art." non si puo' dire nulla: si accetta."""
+    m = re.match(r"\s*art(?:icolo)?\.?\s*(\d+)\s*-?\s*([a-z]+)?", text or "", re.I)
+    if not m:
+        return True
+    # una parola che non e' un ordinale latino ("Tutti", "Conseguenze") = articolo base
+    trovato = (m.group(1), ORDINALI.get((m.group(2) or "").lower(), 1))
+    return trovato == _split_articolo(articolo)
+
+
 def _pick_article_link(html: str, articolo: Optional[str], flag: str = "0") -> tuple:
     """Trova il link caricaArticolo dell'articolo richiesto (versione vigente)
     e il numero di versioni esistenti (multivigenza). `flag` = flagTipoArticolo:
@@ -81,8 +125,15 @@ def _pick_article_link(html: str, articolo: Optional[str], flag: str = "0") -> t
     links = [unquote(l) for l in links]
 
     if articolo:
-        target = re.sub(r"[^0-9]", "", articolo)  # "2-bis" -> "2"
-        cands = [l for l in links if re.search(rf"art\.idArticolo={re.escape(target)}(?:&|$)", l)]
+        num, sotto = _split_articolo(articolo)
+        if num is None:
+            return None, 0
+        cands = [l for l in links if re.search(rf"art\.idArticolo={num}(?:&|$)", l)
+                 and _sotto(l) == sotto]
+        # idSottoArticolo1=10 e' l'articolo "pieno"; 20, 30... sono le varianti
+        # puntate (416-bis.1, 416-bis.2): non vanno confuse con l'articolo richiesto.
+        principali = [l for l in cands if _sotto1(l) in (None, 10)]
+        cands = principali or cands
         if not cands:
             return None, 0
     else:
@@ -225,6 +276,12 @@ def fetch_article(ref: LawRef) -> ArticleResult:
                              permalink=permalink,
                              error="Testo dell'articolo non estraibile. Apri l'atto su Normattiva.",
                              network_error=True)
+
+    if not articolo_coincide(text, ref.articolo):
+        return ArticleResult(ok=False, query_label=ref.label, act_title=act_title,
+                             permalink=permalink,
+                             error=f"Articolo {ref.articolo} non individuato con certezza nell'atto. "
+                                   "Apri Normattiva dal link.")
 
     abrogato = bool(re.search(r"ARTICOLO ABROGATO", text, re.I))
     return ArticleResult(ok=True, query_label=ref.label, act_title=act_title,

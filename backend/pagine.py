@@ -113,10 +113,21 @@ _HEAD_ART = re.compile(r"^\s*art(?:icolo)?\.?\s*\d+(?:[\s-]*(?:" + _LAT + r"))?\
                        re.I)
 
 
-def rubrica(heading: str) -> str:
-    """'Art. 2043 — (Risarcimento per fatto illecito)' -> 'Risarcimento per fatto illecito'."""
-    r = _HEAD_ART.sub("", heading or "")
-    return re.sub(r"\s+", " ", r).strip(" ()[]—–-.:")
+_TESTO_RUB = re.compile(r"^\s*art(?:icolo)?\.?\s*\d+(?:[\s-]*(?:" + _LAT + r"))?\s*\.?\s*"
+                        r"\(([^()]{3,160})\)", re.I)
+
+
+def rubrica(heading: str, text: str = "") -> str:
+    """'Art. 2043 — (Risarcimento per fatto illecito)' -> 'Risarcimento per fatto illecito'.
+
+    Per molti articoli Normattiva mette in intestazione solo "Art. 2043" e la rubrica
+    sta in apertura del testo: "Art. 2043. (Risarcimento per fatto illecito). Qualunque..."
+    In quel caso si prende da li', ma SOLO se e' tra parentesi (forma certa)."""
+    r = re.sub(r"\s+", " ", _HEAD_ART.sub("", heading or "")).strip(" ()[]—–-.:")
+    if r:
+        return r
+    m = _TESTO_RUB.match(text or "")
+    return re.sub(r"\s+", " ", m.group(1)).strip(" .") if m else ""
 
 
 def _taglia(s: str, n: int) -> str:
@@ -132,7 +143,7 @@ def _data_it(ts: float) -> str:
 
 def contesto_pagina(atto: catalogo.Atto, art: str, a: dict, url: str,
                     fetched_at: float) -> dict:
-    rub = rubrica(a.get("article_heading", ""))
+    rub = rubrica(a.get("article_heading", ""), a.get("text", ""))
     nome_art = f"Art. {art} {atto.abbr}"
     h1 = f"Art. {art} {atto.nome}" + (f" — {rub}" if rub else "")
     title = nome_art + (f" — {_taglia(rub, 58 - len(nome_art))}" if rub else "")

@@ -160,6 +160,14 @@ la resa reale si verifica solo sul deploy Railway o da una macchina con rete lib
   è quella **senza** `imUpdate=true`. GET di `caricaArticolo` → testo in `div.bodyTesto`
   (heading `.article-heading-akn`, vigenza `.vigore`).
 - Gestisce articoli **abrogati** (mostra la nota "ARTICOLO ABROGATO…").
+- ⚠️ **Trappola (bug trovato in produzione, 2026-11-08): articoli bis/ter.** Il suffisso
+  latino NON e' in `idArticolo` ma in `art.idSottoArticolo` (1 = base, 2 = bis, 3 = ter …
+  12 = duodecies; `normattiva.ORDINALI`), e `art.idSottoArticolo1` distingue le varianti
+  puntate (10 = 416-bis, 20 = 416-bis.1). Il vecchio codice confrontava solo `idArticolo`:
+  **"art. 416-bis c.p." restituiva il testo del 416**. Ora `_pick_article_link` filtra anche
+  per sotto-articolo e `articolo_coincide()` scarta un testo che apre con un articolo diverso.
+  Test su link REALI in `backend/fixtures/cp_416_links.html`. Se cambia l'estrazione,
+  incrementare `cache.VERSIONE_DATI`: la cache delle pagine viene svuotata al riavvio.
 
 ## Ricerca web (`search.py`) — ⚠️ punto delicato
 Catena di provider:

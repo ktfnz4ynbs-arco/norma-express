@@ -73,6 +73,49 @@ def test_il_link_di_ricerca_porta_con_se_la_query():
     assert "site%3Aitalgiure.giustizia.it" in u
 
 
+# ------------------------------------- l'argomento dell'utente arriva fino al link
+def test_il_link_porta_anche_l_argomento_non_solo_la_norma():
+    """Il difetto: il link ripeteva solo il riferimento, non cosa si cercava.
+
+    Coi motori bloccati il blocco resta vuoto e quel link e' l'unica cosa in
+    mano all'utente: senza argomento gli tocca ridigitare tutto.
+    """
+    u = search._url_ricerca(search.BANCHE[0], "art. 2043 codice civile",
+                            "art. 2043 c.c. responsabilita del medico")
+    assert "responsabilita" in u and "medico" in u, u
+
+
+def test_l_argomento_non_ripete_le_parole_del_riferimento():
+    q = search._con_argomento("art. 2043 codice civile",
+                              "art. 2043 c.c. responsabilita del medico")
+    assert q.lower().count("2043") == 1, q
+    assert q.lower().count("codice") == 1, q
+    assert "responsabilita del medico" in q, q
+
+
+def test_senza_argomento_il_link_resta_quello_di_prima():
+    assert search._con_argomento("art. 3 Cost.", "") == "art. 3 Cost."
+    assert search._con_argomento("art. 3 Cost.", "art. 3 Cost.") == "art. 3 Cost."
+
+
+def test_ogni_blocco_banca_dati_porta_l_argomento_nel_suo_link():
+    _usa(None, _finto_provider({}))
+    for b in search.banche_dati("art. 2043 c.c.", "danno da emotrasfusione"):
+        assert "emotrasfusione" in b["ricerca"], b["id"]
+
+
+def test_anche_le_fasi_dell_iter_portano_l_argomento():
+    _usa(None, _finto_provider({}))
+    for f in search.iter_parlamentare("legge 241/1990", "silenzio assenso"):
+        assert "silenzio" in f["ricerca"], f["id"]
+
+
+def test_deep_links_portano_l_argomento():
+    links = search.deep_links("art. 2043 c.c.", "danno da emotrasfusione")
+    con = [l for l in links if "emotrasfusione" in l["url"]]
+    assert len(con) >= 4, [l["name"] for l in links]
+
+
 def test_tutte_e_quattro_le_banche_sono_coperte():
     ids = [b["id"] for b in search.BANCHE]
     assert ids == ["cassazione", "costituzionale", "gazzetta", "brocardi"]

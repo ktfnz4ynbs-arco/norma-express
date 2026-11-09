@@ -22,13 +22,18 @@ def _hit(url, title="t", snippet="s"):
                       source=search._domain(url), trusted=False)
 
 
-def _finto_provider(mappa):
-    """Restituisce un provider che risponde in base a cosa c'e' nella query."""
+def _finto_provider(mappa, esito_vuoto="nessun_risultato"):
+    """Provider finto: risponde in base a cosa c'e' nella query.
+
+    Come i provider veri, restituisce (risultati, esito): `esito_vuoto` dice
+    COME e' andata quando non trova nulla - "nessun_risultato" per una ricerca
+    andata a buon fine ma senza esiti, "bloccato" per un muro anti-bot.
+    """
     def engine(query, n, dedupe="domain"):
         for chiave, urls in mappa.items():
             if chiave in query:
-                return [_hit(u) for u in urls][:n]
-        return []
+                return [_hit(u) for u in urls][:n], "ok"
+        return [], esito_vuoto
     return engine
 
 
@@ -217,6 +222,67 @@ def test_motivi_senza_duplicati():
     m = search.motivi_genesi("legge 36/2023", "ratio e finalita della riforma",
                              versioni=2, anno_corrente=2026)
     assert len(m) == len(set(m))
+
+
+# ------------------------------- blocco vuoto PERCHE' non c'e' nulla, oppure
+# ------------------------------- blocco vuoto PERCHE' il motore ha detto no
+def test_un_muro_non_si_confonde_con_un_silenzio():
+    """Il difetto: entrambi i casi finivano in un `[]` indistinguibile."""
+    _usa(None, _finto_provider({}, esito_vuoto="bloccato"))
+    assert search.cerca("qualunque cosa")[1] == "bloccato"
+    _usa(None, _finto_provider({}, esito_vuoto="nessun_risultato"))
+    assert search.cerca("qualunque cosa")[1] == "nessun_risultato"
+
+
+def test_ogni_blocco_dice_come_e_andata():
+    _usa(None, _finto_provider({}, esito_vuoto="bloccato"))
+    for b in search.banche_dati("art. 2043 c.c."):
+        assert b["stato"] == "bloccato", b["id"]
+    for f in search.iter_parlamentare("legge 241/1990"):
+        assert f["stato"] == "bloccato", f["id"]
+
+
+def test_il_motore_risponde_ma_la_banca_dati_non_ha_nulla():
+    """Risultati che esistono ma non vengono da questa fonte: assenza vera."""
+    _usa(None, _finto_provider({"italgiure": ["https://www.altrosito.it/x"]}))
+    b = search._cerca_banca(search.BANCHE[0], "art. 2043 c.c.", "", 4)
+    assert b["results"] == [] and b["stato"] == "nessun_risultato"
+
+
+def test_un_solo_risultato_basta_a_dire_che_i_motori_vanno():
+    """Se una ricerca ha funzionato, gli altri blocchi vuoti sono vuoti davvero."""
+    _usa(None, _finto_provider({"brocardi": ["https://www.brocardi.it/art2043.html"]},
+                               esito_vuoto="bloccato"))
+    blocchi = search.banche_dati("art. 2043 c.c.")
+    r = search.riepilogo_ricerca(blocchi)
+    assert r["stato"] == "ok" and r["messaggio"] == "", r
+
+
+def test_tutto_bloccato_lo_dice_una_volta_sola_in_cima():
+    _usa(None, _finto_provider({}, esito_vuoto="bloccato"))
+    r = search.riepilogo_ricerca(search.banche_dati("art. 2043 c.c."))
+    assert r["stato"] == "bloccato"
+    assert "non e' stato possibile interrogarli" in r["messaggio"]
+    assert "non perche' non esistano" in r["messaggio"]
+
+
+def test_niente_allarme_se_la_ricerca_e_andata_e_non_c_era_nulla():
+    _usa(None, _finto_provider({}, esito_vuoto="nessun_risultato"))
+    r = search.riepilogo_ricerca(search.banche_dati("art. 2043 c.c."))
+    assert r["stato"] == "nessun_risultato" and r["messaggio"] == ""
+
+
+def test_il_muro_pesa_piu_del_silenzio_tra_provider_diversi():
+    """Startpage tace, DuckDuckGo sbatte contro un muro: vince il muro."""
+    search._engines = lambda: [_finto_provider({}, "nessun_risultato"),
+                               _finto_provider({}, "bloccato")]
+    assert search.cerca("x")[1] == "bloccato"
+
+
+def test_web_search_resta_una_lista_per_chi_non_vuole_l_esito():
+    _usa(None, _finto_provider({"x": ["https://www.esempio.it/a"]}))
+    out = search.web_search("x")
+    assert isinstance(out, list) and out and out[0]["url"].endswith("/a")
 
 
 if __name__ == "__main__":

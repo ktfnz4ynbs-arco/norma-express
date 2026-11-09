@@ -92,14 +92,15 @@ def ricerca(q: Query):
                 "updates": a.updates, "error": a.error,
                 "abrogato": a.abrogato, "versions": a.versions,
             }
-        interpretazioni = f_int.result()
-        giurisprudenza = f_giu.result()
+        interpretazioni, e_int = f_int.result()
+        giurisprudenza, e_giu = f_giu.result()
 
     return {
         "ok": True,
         "label": label,
         "reference_found": ref is not None,
         "search_provider": search.provider_status(),
+        "ricerca": search.riepilogo_ricerca([e_int, e_giu]),
         "article": article,
         "interpretazioni": interpretazioni,
         "giurisprudenza": giurisprudenza,
@@ -170,12 +171,16 @@ def fonti(q: Query):
         f_int = ex.submit(search.interpretazione, label, free_terms)
         f_giu = ex.submit(search.giurisprudenza, label, free_terms)
         f_ban = ex.submit(search.banche_dati, label, free_terms)
-        interpretazioni = f_int.result()
-        giurisprudenza = f_giu.result()
+        interpretazioni, e_int = f_int.result()
+        giurisprudenza, e_giu = f_giu.result()
         banche = f_ban.result()
     return {
         "ok": True, "label": label,
         "search_provider": search.provider_status(),
+        # Com'e' andata la ricerca nel suo insieme: distingue "non c'e' nulla"
+        # da "non ho potuto guardare". Senza, un blocco vuoto per un muro
+        # anti-bot si legge come un'assenza di giurisprudenza.
+        "ricerca": search.riepilogo_ricerca([e_int, e_giu], banche),
         "interpretazioni": interpretazioni,
         "giurisprudenza": giurisprudenza,
         # Blocchi per corte: ogni banca dati e' interrogata con una ricerca
@@ -209,9 +214,11 @@ def lavori(q: Query):
         return {"ok": False, "error": "Inserisci un articolo di legge o una richiesta."}
     free_terms = q.query or ""
     fasi = search.iter_parlamentare(label, free_terms)
+    riepilogo = search.riepilogo_ricerca(fasi)
     return {
         "ok": True, "label": label,
         "search_provider": search.provider_status(),
+        "ricerca": riepilogo,
         "fasi": fasi,
         "portali": list(search.PORTALI_ITER),
         "motivi": search.motivi_genesi(label, free_terms,

@@ -191,6 +191,7 @@ async function mostraRisultati(payload, art, scroll) {
     const combined = dedupeByUrl([...interp, ...giuri]);
     renderFonti(combined);
     renderBanche(fonti.banche_dati);
+    renderStatoRicerca(fonti.ricerca);
     renderBancheBlocchi(fonti.banche_dati_risultati);
     preparaGenesi(fonti.genesi, payload);
     $("#disclaimer").textContent = fonti.disclaimer ||
@@ -483,6 +484,35 @@ function renderBanche(links) {
   ).join("");
 }
 
+/* Un blocco vuoto puo' voler dire due cose opposte: "ho guardato e non c'e'
+   niente" oppure "non ho potuto guardare". Prima entrambe finivano nello
+   stesso "Nessun risultato", e la seconda si leggeva come la prima: chi
+   consulta ne ricavava che su quel punto non c'e' giurisprudenza. Ora il
+   backend manda `stato` per ogni blocco e un riepilogo per la richiesta. */
+const VUOTO = {
+  bloccato: "Ricerca non eseguita: il motore ha rifiutato la richiesta.",
+  errore: "Ricerca non eseguita: il motore non ha risposto.",
+};
+function notaVuoto(stato, testoNormale) {
+  const muro = VUOTO[stato];
+  return muro
+    ? `<p class="empty-note empty-muro">${muro}</p>`
+    : `<p class="empty-note">${testoNormale}</p>`;
+}
+/* Col muro, "0" accanto al nome della fonte si legge come "zero sentenze". */
+function conta(b) {
+  return VUOTO[b.stato] ? "&mdash;" : String((b.results || []).length);
+}
+/* Avviso unico in cima: se NESSUNA ricerca della richiesta e' andata a buon
+   fine, il muro e' generale e va detto una volta, non blocco per blocco. */
+function renderStatoRicerca(r) {
+  const box = $("#stato-ricerca");
+  if (!box) return;
+  const msg = r && r.messaggio;
+  box.innerHTML = msg ? `<p class="avviso-muro">${esc(msg)}</p>` : "";
+  box.style.display = msg ? "" : "none";
+}
+
 /* Un blocco per banca dati. Un blocco senza risultati NON sparisce: resta coi
    suoi link, cosi' l'utente ha comunque una via verificabile (e capisce che
    quella fonte e' stata interrogata, non dimenticata). */
@@ -496,13 +526,13 @@ function renderBancheBlocchi(blocchi) {
       ${h.snippet ? `<span class="bd-snip">${esc(h.snippet)}</span>` : ""}</li>`).join("");
     const corpo = voci
       ? `<ul class="bd-list">${voci}</ul>`
-      : `<p class="empty-note">Nessun risultato diretto. Apri la ricerca sulla fonte.</p>`;
+      : notaVuoto(b.stato, "Nessun risultato diretto. Apri la ricerca sulla fonte.");
     const links = [
       `<a href="${esc(b.ricerca)}" target="_blank" rel="noopener">Cerca su questa fonte &rarr;</a>`,
       b.portale ? `<a href="${esc(b.portale.url)}" target="_blank" rel="noopener">${esc(b.portale.name)}</a>` : "",
     ].filter(Boolean).join("");
     return `<section class="bd-blocco">
-      <h3 class="bd-nome">${esc(b.nome)} <span class="bd-conta">${(b.results || []).length}</span></h3>
+      <h3 class="bd-nome">${esc(b.nome)} <span class="bd-conta">${conta(b)}</span></h3>
       ${corpo}<div class="bd-links">${links}</div></section>`;
   }).join("");
 }
@@ -541,10 +571,10 @@ async function caricaGenesi(payload, btn) {
       const voci = (f.results || []).map((h) =>
         `<li><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a></li>`).join("");
       return `<section class="bd-blocco">
-        <h3 class="bd-nome">${esc(f.nome)} <span class="bd-conta">${(f.results || []).length}</span></h3>
+        <h3 class="bd-nome">${esc(f.nome)} <span class="bd-conta">${conta(f)}</span></h3>
         <p class="bd-desc">${esc(f.descrizione)}</p>
         ${voci ? `<ul class="bd-list">${voci}</ul>`
-               : `<p class="empty-note">Nessun atto trovato per questa fase.</p>`}
+               : notaVuoto(f.stato, "Nessun atto trovato per questa fase.")}
         <div class="bd-links"><a href="${esc(f.ricerca)}" target="_blank" rel="noopener">Cerca questa fase &rarr;</a></div>
       </section>`;
     }).join("");

@@ -69,6 +69,19 @@ la query**, scaricando sull'utente il compito di ridigitare tutto in un form vuo
   dell'iter e da `deep_links()`. Chi aggiunge un link di ricerca passi da li'.
 - Un blocco **senza risultati non sparisce**: resta coi suoi link, cosi' si vede che la
   fonte e' stata interrogata e non dimenticata.
+- ⚠️ **"Non c'e' nulla" e "non ho potuto guardare" non sono la stessa cosa** (2026-11-09).
+  Prima entrambi finivano in un `[]` indistinguibile e il frontend scriveva "Nessun
+  risultato": chi consulta ne deduceva che su quel punto non c'e' giurisprudenza. Ora
+  i provider restituiscono `(risultati, esito)` con esito `ok` / `bloccato` (pagina di
+  verifica anti-bot: DuckDuckGo e Startpage la riconoscono dall'assenza dei marcatori
+  dei risultati) / `errore` (rete) / `nessun_risultato`. `cerca()` e' `web_search()` che
+  dice anche com'e' andata, e quando nessun provider da' risultati tiene **l'esito piu'
+  grave**: un muro conta piu' di un silenzio. Ogni blocco porta `stato`;
+  `riepilogo_ricerca()` guarda la richiesta nel suo insieme e, se NESSUNA ricerca e'
+  riuscita, lo dice una volta in cima (`ricerca` in `/api/fonti`, `/api/ricerca`,
+  `/api/lavori`). Il frontend mostra "&mdash;" invece di "0" e un riquadro d'avviso,
+  non il grigio dell'assenza. **Chi aggiunge un provider restituisca l'esito**, non un
+  `[]` muto.
 
 ## Genesi della norma: contesto separato richiamato quando serve (2026-11-04)
 Richiesta utente: distinguere **disegno di legge · lavori preparatori · emendamenti ·

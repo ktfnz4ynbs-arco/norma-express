@@ -96,7 +96,7 @@ def _rank(hits: list, n: int, drop_docs: bool = True) -> list:
 
 
 # ---------------------------------------------------------------- Brave API
-def _brave(query: str, n: int, dedupe: str = "domain") -> list:
+def _brave(query: str, n: int, dedupe: str = "domain") -> tuple:
     try:
         r = requests.get(
             BRAVE_ENDPOINT,
@@ -108,7 +108,7 @@ def _brave(query: str, n: int, dedupe: str = "domain") -> list:
         r.raise_for_status()
         data = r.json()
     except (requests.RequestException, ValueError):
-        return []
+        return [], "errore"
 
     hits, seen = [], set()
     for item in (data.get("web", {}) or {}).get("results", []):
@@ -123,7 +123,8 @@ def _brave(query: str, n: int, dedupe: str = "domain") -> list:
         hits.append(Hit(title=_strip(item.get("title", "")), url=url,
                         snippet=_strip(item.get("description", "")),
                         source=dom, trusted=dom in TRUSTED))
-    return _rank(hits, n)
+    out = _rank(hits, n)
+    return out, ("ok" if out else "nessun_risultato")
 
 
 # ------------------------------------------------------------ DuckDuckGo HTML
@@ -136,15 +137,17 @@ def _unwrap(url: str) -> str:
     return url
 
 
-def _ddg(query: str, n: int, dedupe: str = "domain") -> list:
+def _ddg(query: str, n: int, dedupe: str = "domain") -> tuple:
     try:
         r = requests.post(DDG, data={"q": query}, headers={"User-Agent": UA}, timeout=TIMEOUT)
         r.raise_for_status()
     except requests.RequestException:
-        return []
-    # pagina di challenge/anomaly: nessun risultato utile
+        return [], "errore"
+    # Pagina di challenge/anomaly: il motore ha risposto, ma con un muro.
+    # Prima tornava [] come una ricerca senza esiti: ora lo dice, perche' le
+    # due cose vogliono dire l'opposto per chi legge il risultato.
     if "result__a" not in r.text:
-        return []
+        return [], "bloccato"
 
     hits, seen = [], set()
     for b in re.split(r'class="result[ _]', r.text)[1:]:
@@ -165,11 +168,12 @@ def _ddg(query: str, n: int, dedupe: str = "domain") -> list:
         seen.add(key)
         hits.append(Hit(title=title, url=url, snippet=snippet, source=dom,
                         trusted=dom in TRUSTED))
-    return _rank(hits, n)
+    out = _rank(hits, n)
+    return out, ("ok" if out else "nessun_risultato")
 
 
 # --------------------------------------------------------- Startpage (keyless)
-def _startpage(query: str, n: int, drop_docs: bool = True, dedupe: str = "domain") -> list:
+def _startpage(query: str, n: int, drop_docs: bool = True, dedupe: str = "domain") -> tuple:
     """Risultati Google via Startpage: nessuna API key, nessuna registrazione."""
     try:
         r = requests.get(
@@ -180,7 +184,12 @@ def _startpage(query: str, n: int, drop_docs: bool = True, dedupe: str = "domain
         )
         r.raise_for_status()
     except requests.RequestException:
-        return []
+        return [], "errore"
+
+    # Startpage serve una pagina di verifica che non contiene risultati: come
+    # per DuckDuckGo, "muro" e "non ho trovato niente" non sono la stessa cosa.
+    if "result-title" not in r.text:
+        return [], "bloccato"
 
     clean = re.sub(r"(?is)<(style|script)[^>]*>.*?</\1>", " ", r.text)
     snips = [_strip(s) for s in re.findall(
@@ -201,7 +210,8 @@ def _startpage(query: str, n: int, drop_docs: bool = True, dedupe: str = "domain
         seen.add(key)
         hits.append(Hit(title=title, url=url, snippet=snips[i] if i < len(snips) else "",
                         source=dom, trusted=dom in TRUSTED))
-    return _rank(hits, n, drop_docs)
+    out = _rank(hits, n, drop_docs)
+    return out, ("ok" if out else "nessun_risultato")
 
 
 # --------------------------------------------------------------------- public
@@ -214,30 +224,91 @@ def _engines():
     return chain
 
 
+# Esiti di una ricerca, dal piu' informativo al meno:
+#   ok               -> almeno un risultato
+#   bloccato         -> il motore ha risposto con una pagina di verifica/anomaly
+#   errore           -> il motore non ha risposto (rete, timeout, 5xx)
+#   nessun_risultato -> il motore ha risposto per davvero, ma non c'era nulla
+# La distinzione non e' pedanteria: "non esiste giurisprudenza su questo punto"
+# e "non ho potuto guardare" portano chi legge a due conclusioni opposte, e la
+# seconda non deve mai passare per la prima.
+def cerca(query: str, n: int = 6, dedupe: str = "domain") -> tuple:
+    """Come `web_search`, ma restituisce anche COM'E' ANDATA: (risultati, esito).
+
+    Prova i provider in sequenza finche' uno da' risultati. Se nessuno ne da',
+    l'esito e' il piu' grave incontrato: un muro conta piu' di un silenzio.
+    """
+    peggio = None
+    for engine in _engines():
+        try:
+            hits, esito = engine(query, n, dedupe=dedupe)
+        except Exception:
+            hits, esito = [], "errore"
+        if hits:
+            return [asdict(h) for h in hits], "ok"
+        if peggio is None or _GRAVITA.get(esito, 0) > _GRAVITA.get(peggio, 0):
+            peggio = esito
+    return [], (peggio or "errore")
+
+
+_GRAVITA = {"nessun_risultato": 1, "errore": 2, "bloccato": 3}
+
+
 def web_search(query: str, n: int = 6, dedupe: str = "domain") -> list:
-    """Prova i provider keyless in sequenza finche' uno restituisce risultati.
+    """Solo i risultati, per chi non ha bisogno di sapere perche' sono zero.
 
     `dedupe="url"` serve alle ricerche ristrette a un singolo dominio
     (operatore `site:`): deduplicando per dominio tornerebbe UN solo risultato.
     """
-    for engine in _engines():
-        try:
-            hits = engine(query, n, dedupe=dedupe)
-        except Exception:
-            hits = []
-        if hits:
-            return [asdict(h) for h in hits]
-    return []
+    return cerca(query, n, dedupe)[0]
 
 
-def interpretazione(label: str, extra: str = "") -> list:
+def riepilogo_ricerca(*gruppi) -> dict:
+    """Come e' andata la ricerca NEL SUO INSIEME, per la richiesta corrente.
+
+    Serve perche' un blocco vuoto, da solo, non distingue "non c'e' nulla" da
+    "non ho potuto guardare": se pero' NESSUNA delle ricerche della stessa
+    richiesta ha prodotto un risultato e almeno una ha sbattuto contro un muro,
+    il muro e' generale e va detto una volta sola, in cima.
+
+    `gruppi` sono liste di blocchi (quelli con la chiave "stato") oppure esiti
+    gia' pronti (stringhe).
+    """
+    esiti = []
+    for g in gruppi:
+        for x in (g or []):
+            if isinstance(x, str):
+                esiti.append(x)
+            elif isinstance(x, dict) and "stato" in x:
+                esiti.append(x["stato"])
+    if not esiti:
+        return {"stato": "nessun_risultato", "provider": provider_status(), "messaggio": ""}
+    if "ok" in esiti:
+        return {"stato": "ok", "provider": provider_status(), "messaggio": ""}
+    if "bloccato" in esiti:
+        return {"stato": "bloccato", "provider": provider_status(),
+                "messaggio": "I motori di ricerca hanno rifiutato le richieste: "
+                             "i risultati qui sotto mancano perche' non e' stato "
+                             "possibile interrogarli, non perche' non esistano. "
+                             "Usi i link alle banche dati."}
+    if "errore" in esiti:
+        return {"stato": "errore", "provider": provider_status(),
+                "messaggio": "I motori di ricerca non hanno risposto: i risultati "
+                             "mancano per un problema di collegamento, non perche' "
+                             "non esistano. Usi i link alle banche dati."}
+    return {"stato": "nessun_risultato", "provider": provider_status(), "messaggio": ""}
+
+
+def interpretazione(label: str, extra: str = "") -> tuple:
+    """(risultati, esito) - vedi `cerca`."""
     q = f"{label} {extra} interpretazione spiegazione commento dottrina".strip()
-    return web_search(q, 6)
+    return cerca(q, 6)
 
 
-def giurisprudenza(label: str, extra: str = "") -> list:
+def giurisprudenza(label: str, extra: str = "") -> tuple:
+    """(risultati, esito) - vedi `cerca`."""
     q = f"{label} {extra} giurisprudenza sentenza cassazione massima".strip()
-    return web_search(q, 6)
+    return cerca(q, 6)
 
 
 def deep_links(ref_label: str, extra: str = "") -> list:
@@ -331,13 +402,17 @@ def _cerca_banca(banca: dict, label: str, extra: str, n: int) -> dict:
     siti = " OR ".join("site:" + d for d in banca["domini"])
     q = " ".join(x for x in (siti, label, extra, banca["termini"]) if x)
     try:
-        hits = web_search(q, n, dedupe="url")
+        hits, esito = cerca(q, n, dedupe="url")
     except Exception:
-        hits = []
+        hits, esito = [], "errore"
     # L'operatore site: non e' onorato allo stesso modo da tutti i provider:
     # si filtra comunque per dominio, cosi' l'attribuzione alla corte e' certa.
     hits = [h for h in hits if any(d in h.get("source", "") for d in banca["domini"])]
-    return {"id": banca["id"], "nome": banca["nome"], "results": hits[:n],
+    # Il motore ha risposto ma da questa banca dati non e' uscito nulla: e'
+    # un'assenza vera, non un muro.
+    if esito == "ok" and not hits:
+        esito = "nessun_risultato"
+    return {"id": banca["id"], "nome": banca["nome"], "results": hits[:n], "stato": esito,
             "ricerca": _url_ricerca(banca, label, extra), "portale": banca.get("portale")}
 
 
@@ -392,12 +467,14 @@ def _cerca_fase(fase: dict, label: str, extra: str, n: int) -> dict:
     siti = " OR ".join("site:" + d for d in fase["domini"])
     q = " ".join(x for x in (siti, label, extra, fase["termini"]) if x)
     try:
-        hits = web_search(q, n, dedupe="url")
+        hits, esito = cerca(q, n, dedupe="url")
     except Exception:
-        hits = []
+        hits, esito = [], "errore"
     hits = [h for h in hits if any(d in h.get("source", "") for d in fase["domini"])]
+    if esito == "ok" and not hits:
+        esito = "nessun_risultato"
     return {"id": fase["id"], "nome": fase["nome"], "descrizione": fase["descrizione"],
-            "results": hits[:n],
+            "results": hits[:n], "stato": esito,
             "ricerca": "https://duckduckgo.com/?q=" + quote_plus(
                 " ".join((siti, _con_argomento(label, extra), fase["termini"])))}
 

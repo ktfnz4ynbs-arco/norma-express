@@ -103,7 +103,7 @@ def ricerca(q: Query):
         "article": article,
         "interpretazioni": interpretazioni,
         "giurisprudenza": giurisprudenza,
-        "banche_dati": search.deep_links(label),
+        "banche_dati": search.deep_links(label, free_terms),
         "disclaimer": "Interpretazioni e giurisprudenza provengono da ricerche web su fonti "
                       "terze e vanno verificate. Il testo dell'articolo e' tratto da Normattiva. "
                       "Questo strumento non costituisce parere legale.",
@@ -182,7 +182,7 @@ def fonti(q: Query):
         # ristretta al suo dominio, cosi' il risultato e' attribuibile a chi
         # l'ha emesso invece di dipendere da una ricerca generica.
         "banche_dati_risultati": banche,
-        "banche_dati": search.deep_links(label),
+        "banche_dati": search.deep_links(label, free_terms),
         # Contesto a parte (vedi /api/lavori). Qui si dice solo SE conviene
         # aprirlo e perche': il frontend lo richiama quando "motivi" non e' vuoto.
         "genesi": {"motivi": search.motivi_genesi(

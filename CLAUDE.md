@@ -59,6 +59,14 @@ la query**, scaricando sull'utente il compito di ridigitare tutto in un form vuo
   e a `web_search`. Non rimuoverlo.
 - `deep_links()` ora include, per ogni banca dati, un link che **porta con se' la query**
   (motore + operatore `site:`, forma di URL stabile) oltre al portale ufficiale.
+- ⚠️ **Il link deve portare l'ARGOMENTO, non solo la norma** (2026-11-09). `label` e'
+  il riferimento normalizzato; l'argomento sta in `extra`, il testo come l'utente l'ha
+  scritto. Le ricerche lato server lo usavano gia', i link no: si arrivava su una
+  ricerca del solo "art. 2043 codice civile", senza "responsabilita' del medico". E
+  siccome coi motori bloccati il blocco resta vuoto, quel link e' l'unica cosa in mano
+  all'utente. Ora `_con_argomento(label, extra)` li unisce senza ripetere le parole
+  gia' presenti, ed e' usato da `_url_ricerca()`, dai blocchi banca dati, dalle fasi
+  dell'iter e da `deep_links()`. Chi aggiunge un link di ricerca passi da li'.
 - Un blocco **senza risultati non sparisce**: resta coi suoi link, cosi' si vede che la
   fonte e' stata interrogata e non dimenticata.
 

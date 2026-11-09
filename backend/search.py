@@ -240,12 +240,16 @@ def giurisprudenza(label: str, extra: str = "") -> list:
     return web_search(q, 6)
 
 
-def deep_links(ref_label: str) -> list:
-    """Ricerche pronte verso banche dati GRATUITE (sempre disponibili)."""
-    q = quote_plus(ref_label)
+def deep_links(ref_label: str, extra: str = "") -> list:
+    """Ricerche pronte verso banche dati GRATUITE (sempre disponibili).
+
+    `extra` e' il testo scritto dall'utente: ci finisce l'argomento, che deve
+    arrivare fino al link, non fermarsi alla ricerca lato server.
+    """
+    q = quote_plus(_con_argomento(ref_label, extra))
     links = []
     for b in BANCHE:
-        links.append({"name": b["ricerca_nome"], "url": _url_ricerca(b, ref_label)})
+        links.append({"name": b["ricerca_nome"], "url": _url_ricerca(b, ref_label, extra)})
         if b.get("portale"):
             links.append(b["portale"])
     links += [
@@ -293,7 +297,25 @@ BANCHE = (
 )
 
 
-def _url_ricerca(banca: dict, label: str) -> str:
+def _con_argomento(label: str, extra: str) -> str:
+    """`label` piu' le parole di `extra` che non ci sono gia'.
+
+    `label` e' solo il riferimento normalizzato ("art. 2043 codice civile");
+    l'ARGOMENTO - quello che l'utente voleva davvero sapere - sta in `extra`,
+    cioe' nel testo come l'ha scritto lui. Le ricerche lato server lo usavano
+    gia'; i LINK di ricerca no, e siccome con i motori bloccati il blocco resta
+    quasi sempre vuoto, quel link e' l'unica cosa che l'utente ha in mano:
+    portarlo su una ricerca senza il suo argomento vuol dire fargli ridigitare
+    tutto. Le parole gia' presenti nel riferimento non si ripetono.
+    """
+    base = (label or "").strip()
+    noti = set(re.findall(r"\w+", base.lower()))
+    agg = [t for t in (extra or "").split()
+           if re.sub(r"\W", "", t.lower()) and re.sub(r"\W", "", t.lower()) not in noti]
+    return " ".join(x for x in (base, " ".join(agg)) if x).strip()
+
+
+def _url_ricerca(banca: dict, label: str, extra: str = "") -> str:
     """Link che PORTA CON SE' la query.
 
     I portali di Cassazione e Consulta espongono form che non accettano la
@@ -302,7 +324,7 @@ def _url_ricerca(banca: dict, label: str) -> str:
     cui forma di URL e' stabile e verificabile.
     """
     siti = " OR ".join("site:" + d for d in banca["domini"])
-    return "https://duckduckgo.com/?q=" + quote_plus(f"{siti} {label}")
+    return "https://duckduckgo.com/?q=" + quote_plus(f"{siti} {_con_argomento(label, extra)}")
 
 
 def _cerca_banca(banca: dict, label: str, extra: str, n: int) -> dict:
@@ -316,7 +338,7 @@ def _cerca_banca(banca: dict, label: str, extra: str, n: int) -> dict:
     # si filtra comunque per dominio, cosi' l'attribuzione alla corte e' certa.
     hits = [h for h in hits if any(d in h.get("source", "") for d in banca["domini"])]
     return {"id": banca["id"], "nome": banca["nome"], "results": hits[:n],
-            "ricerca": _url_ricerca(banca, label), "portale": banca.get("portale")}
+            "ricerca": _url_ricerca(banca, label, extra), "portale": banca.get("portale")}
 
 
 def banche_dati(label: str, extra: str = "", n: int = 4) -> list:
@@ -377,7 +399,7 @@ def _cerca_fase(fase: dict, label: str, extra: str, n: int) -> dict:
     return {"id": fase["id"], "nome": fase["nome"], "descrizione": fase["descrizione"],
             "results": hits[:n],
             "ricerca": "https://duckduckgo.com/?q=" + quote_plus(
-                " ".join((siti, label, fase["termini"])))}
+                " ".join((siti, _con_argomento(label, extra), fase["termini"])))}
 
 
 def iter_parlamentare(label: str, extra: str = "", n: int = 4) -> list:
